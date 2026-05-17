@@ -61,76 +61,39 @@
 
 ## 🚀 快速开始
 
-```bash
-# 1. 克隆项目
-git clone <your-repo-url>
-cd agent
+### 🪟 Windows 一键部署（推荐）
 
-# 2. 创建虚拟环境
-python -m venv .venv
-.venv\Scripts\activate          # Windows
-source .venv/bin/activate       # macOS / Linux
-
-# 3. 安装依赖
-pip install -r requirements.txt
-
-# 4. 启动 WebUI
-python server.py
-```
-
-浏览器打开 **http://localhost:7200** 即可开始对话。
-
-> 终端命令行模式：`python main.py`
-
-### 安装常见问题
-
-| 问题 | 解决方案 |
-|------|----------|
-| PowerShell 激活失败 | `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
-| pip install 报错 | 确认使用虚拟环境中的 pip：`.venv\Scripts\pip.exe install -r requirements.txt` |
-| 端口被占用 | 修改 `server.py` 中 `port=7200` 为其他端口 |
-
-### 🐧 Linux 一键部署（推荐）
-
-```bash
+```batch
 # 克隆项目
 git clone https://github.com/mubaiqq/baibot.git
 cd agent
 
-# 启动控制面板（交互菜单）
+# 双击运行 deploy.bat，或命令行运行
+deploy.bat
+```
+
+启动后显示**交互式控制面板**（与 Linux 版一致），自动检测 Python 环境、创建 venv、安装依赖。
+
+| 命令 | 说明 |
+|------|------|
+| `deploy.bat` | 打开交互控制面板 |
+| `deploy.bat cli` | 直接进入命令行聊天 |
+| `deploy.bat start` | 后台启动 WebUI |
+| `deploy.bat stop` | 停止 WebUI |
+| `deploy.bat restart` | 重启 WebUI |
+| `deploy.bat status` | 查看运行状态 |
+| `deploy.bat log` | 查看日志 |
+| `deploy.bat update` | 更新 Python 依赖 |
+| `deploy.bat uninstall` | 卸载（删除 venv / 配置 / 缓存） |
+
+### 🐧 Linux 一键部署（推荐）
+
+```bash
+git clone https://github.com/mubaiqq/baibot.git
+cd agent
+
 bash deploy.sh
 ```
-
-启动后显示**交互式控制面板**：
-
-```
-╔══════════════════════════════════╗
-║     baibot · 小白  控制面板     ║
-╚══════════════════════════════════╝
-
-  ● WebUI 运行中  (PID: 1234)  http://localhost:7200
-
-  ── 启动 ──
-  [1] 命令行聊天
-  [2] 启动 WebUI
-
-  ── 管理 ──
-  [3] 重启 WebUI
-  [4] 停止 WebUI
-  [5] 查看状态
-  [6] 查看日志
-
-  ── 系统 ──
-  [7] 安装 systemd 开机自启
-  [8] 卸载（删除 venv / 配置）
-  [9] 更新依赖
-
-  [0] 退出
-
-请输入数字:
-```
-
-**直接命令（跳过菜单）：**
 
 | 命令 | 说明 |
 |------|------|
@@ -144,17 +107,6 @@ bash deploy.sh
 | `bash deploy.sh update` | 更新 Python 依赖 |
 | `sudo bash deploy.sh install` | 注册 systemd 服务（开机自启） |
 | `bash deploy.sh uninstall` | 卸载（删除 venv / 配置 / 缓存） |
-
-**systemd 管理（install 后可用）：**
-
-```bash
-sudo systemctl start baibot       # 启动
-sudo systemctl stop baibot        # 停止
-sudo systemctl status baibot      # 查看状态
-sudo journalctl -u baibot -f      # 实时日志
-```
-
-> 脚本自动检测 Python 版本、安装缺失系统包（`python3-venv` 等），适配 Ubuntu / Debian / CentOS。
 
 ### 🍎 macOS 部署
 
@@ -171,6 +123,30 @@ pip install -r requirements.txt
 
 python server.py
 ```
+
+### 手动安装（通用）
+
+```bash
+git clone <your-repo-url>
+cd agent
+python -m venv .venv
+.venv\Scripts\activate          # Windows
+source .venv/bin/activate       # macOS / Linux
+pip install -r requirements.txt
+python server.py
+```
+
+浏览器打开 **http://localhost:7200** 即可开始对话。
+
+> 终端命令行模式：`python main.py`
+
+### 安装常见问题
+
+| 问题 | 解决方案 |
+|------|----------|
+| PowerShell 激活失败 | `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
+| pip install 报错 | 确认使用虚拟环境中的 pip：`.venv\Scripts\pip.exe install -r requirements.txt` |
+| 端口被占用 | 修改 `server.py` 中 `port=7200` 为其他端口 |
 
 ---
 
@@ -286,6 +262,7 @@ agent/
 ├── app_config.json      # Agent 参数持久化
 ├── requirements.txt     # Python 依赖
 ├── deploy.sh            # Linux 一键部署脚本
+├── deploy.bat           # Windows 一键部署脚本
 ├── scripts/             # AI 自动生成的 Python 脚本
 └── tools/
     ├── __init__.py       # 工具注册 + Schema + 配置收集
