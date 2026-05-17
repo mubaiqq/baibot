@@ -55,7 +55,6 @@ echo [OK] Python: %PYTHON_EXE%
 
 set "VENV_DIR=%~dp0.venv"
 set "MARKER_FILE=%~dp0.venv\.installed"
-set "PID_FILE=%~dp0baibot.pid"
 set "LOG_FILE=%~dp0baibot.log"
 
 if not exist "%VENV_DIR%" (
@@ -150,30 +149,25 @@ pause
 goto :menu
 
 :: ============================================================
+:stop_if_running
+tasklist /FI "IMAGENAME eq pythonw.exe" 2>nul | findstr "pythonw.exe" >nul
+if not errorlevel 1 taskkill /IM pythonw.exe /F >nul 2>&1
+exit /b
+
+:: ============================================================
 :webui
 :: 如果已运行则先停
-if exist "%PID_FILE%" (
-    set /p _p=<"%PID_FILE%"
-    taskkill /PID %_p% /F >nul 2>&1
-    del "%PID_FILE%" >nul 2>&1
-    timeout /t 1 /nobreak >nul
-)
+call :stop_if_running
 
 echo.
 echo 启动 WebUI 服务...
-powershell -Command "$p=Start-Process -FilePath '%VENV_DIR%\Scripts\python.exe' -ArgumentList '%~dp0server.py' -WindowStyle Hidden -PassThru; $p.Id | Out-File -Encoding ASCII '%PID_FILE%'"
-timeout /t 3 /nobreak >nul
+start "" "%VENV_DIR%\Scripts\pythonw.exe" "%~dp0server.py"
+timeout /t 2 /nobreak >nul
 
-if not exist "%PID_FILE%" (
-    echo [失败] 未生成 PID 文件
-    pause
-    goto :menu
-)
-set /p _p=<"%PID_FILE%"
-tasklist /FI "PID eq %_p%" 2>nul | findstr "%_p%" >nul
+:: 确认启动
+tasklist /FI "IMAGENAME eq pythonw.exe" 2>nul | findstr "pythonw.exe" >nul
 if errorlevel 1 (
     echo [失败] 启动失败，查看日志: type "%LOG_FILE%"
-    del "%PID_FILE%" >nul 2>&1
     pause
     goto :menu
 )
@@ -193,44 +187,29 @@ goto :menu
 
 :: ============================================================
 :stop
-if not exist "%PID_FILE%" (
-    echo 服务未运行
-    pause
-    goto :menu
-)
-set /p _p=<"%PID_FILE%"
-taskkill /PID %_p% /F >nul 2>&1
-del "%PID_FILE%" >nul 2>&1
+call :stop_if_running
 echo 已停止
 pause
 goto :menu
 
 :: ============================================================
 :restart
-if exist "%PID_FILE%" (
-    set /p _p=<"%PID_FILE%"
-    taskkill /PID %_p% /F >nul 2>&1
-    del "%PID_FILE%" >nul 2>&1
-    timeout /t 1 /nobreak >nul
-)
+call :stop_if_running
+timeout /t 1 /nobreak >nul
 echo 重启 WebUI...
 goto :webui
 
 :: ============================================================
 :status
-if exist "%PID_FILE%" (
-    set /p _p=<"%PID_FILE%"
-    tasklist /FI "PID eq %_p%" 2>nul | findstr "%_p%" >nul
-    if errorlevel 1 (
-        echo 服务未运行（PID 文件残留）
-    ) else (
-        echo.
-        echo 运行中  PID: %_p%  端口: 7200
-        echo http://localhost:7200
-        echo.
-    )
-) else (
+tasklist /FI "IMAGENAME eq pythonw.exe" 2>nul | findstr "pythonw.exe" >nul
+if errorlevel 1 (
     echo 服务未运行
+) else (
+    echo.
+    echo 运行中  端口: 7200
+    echo http://localhost:7200
+    echo.
+    for /f "tokens=2" %%p in ('tasklist /FI "IMAGENAME eq pythonw.exe" /FO TABLE /NH 2^>nul') do echo  PID: %%p
 )
 pause
 goto :menu
@@ -269,14 +248,7 @@ if /i not "%confirm%"=="yes" (
     goto :menu
 )
 
-if exist "%PID_FILE%" (
-    set /p _p=<"%PID_FILE%"
-    taskkill /PID %_p% /F >nul 2>&1
-    del "%PID_FILE%" >nul 2>&1
-)
-
 if exist "%VENV_DIR%" rmdir /s /q "%VENV_DIR%" >nul 2>&1
-del "%PID_FILE%" >nul 2>&1
 del "%LOG_FILE%" >nul 2>&1
 del "%~dp0config.json" >nul 2>&1
 del "%~dp0plugin_config.json" >nul 2>&1
