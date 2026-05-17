@@ -43,7 +43,9 @@ app_config.json
 scripts/*.py
 
 # PyInstaller output
-deploy.exe
 dist/
 build/
 *.spec
+
+# C build artifacts
+deploy.obj
