@@ -1,13 +1,19 @@
 """
 baibot Windows Control Panel
-双击 deploy.exe 或 python deploy.py 运行
+Double-click deploy.exe or run: python deploy.py
 """
 import os
 import sys
 import subprocess
 import time
 
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+# When running from PyInstaller .exe, __file__ is a temp path.
+# Use sys.executable to find the real project directory.
+if getattr(sys, 'frozen', False):
+    PROJECT_DIR = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+
 VENV_DIR    = os.path.join(PROJECT_DIR, ".venv")
 MARKER_FILE = os.path.join(VENV_DIR, ".installed")
 LOG_FILE    = os.path.join(PROJECT_DIR, "baibot.log")
@@ -40,21 +46,32 @@ def ensure_venv() -> None:
     python = _find_system_python()
     if not os.path.exists(VENV_DIR):
         print("  [1/2] Creating virtual environment...")
-        subprocess.run([python, "-m", "venv", VENV_DIR], check=True)
+        r = subprocess.run([python, "-m", "venv", VENV_DIR])
+        if r.returncode != 0:
+            print("  [FAIL] venv creation failed")
+            input("  Press Enter to exit...")
+            sys.exit(1)
         print("        done")
 
     if not os.path.exists(MARKER_FILE):
         print("  [2/2] Installing dependencies...")
         pip = os.path.join(VENV_DIR, "Scripts", "pip.exe")
-        subprocess.run([pip, "install", "--quiet", "--upgrade", "pip"], check=True)
-        subprocess.run([pip, "install", "--quiet", "-r", os.path.join(PROJECT_DIR, "requirements.txt")], check=True)
+        if not os.path.exists(pip):
+            print("  [FAIL] pip.exe not found")
+            input("  Press Enter to exit...")
+            sys.exit(1)
+        r = subprocess.run([pip, "install", "-r", os.path.join(PROJECT_DIR, "requirements.txt")])
+        if r.returncode != 0:
+            print("  [FAIL] pip install failed - check network")
+            input("  Press Enter to exit...")
+            sys.exit(1)
         open(MARKER_FILE, "w").close()
         print("        done")
 
 
 def _find_system_python() -> str:
     candidates = [
-        os.path.join(os.environ["USERPROFILE"], "python-sdk", "python3.13.2", "python.exe"),
+        os.path.join(os.environ.get("USERPROFILE", ""), "python-sdk", "python3.13.2", "python.exe"),
         os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Python", "Python314", "python.exe"),
         os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Python", "Python313", "python.exe"),
         os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Python", "Python312", "python.exe"),
@@ -65,7 +82,6 @@ def _find_system_python() -> str:
     for p in candidates:
         if os.path.exists(p):
             return p
-    # fallback
     result = subprocess.run(["where", "python"], capture_output=True, text=True, shell=True)
     if result.returncode == 0 and result.stdout.strip():
         return result.stdout.strip().splitlines()[0]
@@ -84,6 +100,10 @@ def stop_server() -> None:
 
 def start_webui() -> None:
     ensure_venv()
+    if not os.path.exists(PYTHONW_EXE):
+        print("  [FAIL] pythonw.exe not found in venv")
+        return
+
     stop_server()
 
     print("  Starting WebUI...")
@@ -110,6 +130,9 @@ def start_webui() -> None:
 
 def cli_chat() -> None:
     ensure_venv()
+    if not os.path.exists(PYTHON_EXE):
+        print("  [FAIL] python.exe not found in venv")
+        return
     print()
     print("  CLI chat mode. /help for help, /exit to quit.")
     print()
@@ -138,10 +161,12 @@ def show_log() -> None:
 
 def update_deps() -> None:
     ensure_venv()
-    print("  Updating...")
     pip = os.path.join(VENV_DIR, "Scripts", "pip.exe")
-    subprocess.run([pip, "install", "--quiet", "--upgrade", "pip"], check=True)
-    subprocess.run([pip, "install", "--quiet", "--upgrade", "-r", os.path.join(PROJECT_DIR, "requirements.txt")], check=True)
+    if not os.path.exists(pip):
+        print("  [FAIL] pip.exe not found")
+        return
+    print("  Updating...")
+    subprocess.run([pip, "install", "--upgrade", "-r", os.path.join(PROJECT_DIR, "requirements.txt")])
     print("  Done")
 
 
@@ -150,7 +175,11 @@ def uninstall() -> None:
     print("  [WARNING] Will remove venv, logs and config.")
     print("  Source code will NOT be deleted.")
     print()
-    confirm = input("  Type yes to confirm: ")
+    try:
+        confirm = input("  Type yes to confirm: ")
+    except (EOFError, KeyboardInterrupt):
+        print("  Cancelled")
+        return
     if confirm.strip().lower() != "yes":
         print("  Cancelled")
         return
@@ -165,7 +194,10 @@ def uninstall() -> None:
               os.path.join(PROJECT_DIR, "plugin_config.json"),
               os.path.join(PROJECT_DIR, "app_config.json")]:
         if os.path.exists(f):
-            os.remove(f)
+            try:
+                os.remove(f)
+            except Exception:
+                pass
     print("  Uninstall complete")
 
 
@@ -221,11 +253,14 @@ def menu() -> None:
             time.sleep(0.5)
             continue
 
-        input("\n  Press Enter to return...")
+        try:
+            input("\n  Press Enter to return...")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
 
 
-# ── CLI arg routing ──
-if __name__ == "__main__":
+def main() -> None:
     title("baibot Control Panel")
     ensure_venv()
 
@@ -250,3 +285,11 @@ if __name__ == "__main__":
         uninstall()
     else:
         menu()
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print(f"\n  [FATAL] {e}")
+        input("  Press Enter to exit...")
