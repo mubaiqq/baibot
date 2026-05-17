@@ -63,20 +63,26 @@ PROVIDERS = [
     },
 ]
 
-DEFAULT_PROVIDER = "MyTokenLand"
+DEFAULT_PROVIDER = "算力岛"
 DEFAULT_MODEL = "claude-sonnet-4-6"
 
 
 def get_client(provider_name: str | None = None) -> OpenAI:
     p = None
+    target = provider_name or DEFAULT_PROVIDER
     for provider in PROVIDERS:
-        if provider["name"] == (provider_name or DEFAULT_PROVIDER):
+        if provider["name"] == target:
             p = provider
             break
     if not p:
         p = PROVIDERS[0]
+        print(f"[baibot] 警告: 提供商 '{target}' 不存在，已回退到 '{p['name']}'")
 
-    return OpenAI(api_key=p["api_key"], base_url=p["base_url"])
+    key = p.get("api_key", "")
+    if key in ("sk-your-key-here", "tp-your-key-here", "your-key-here", ""):
+        print(f"[baibot] 警告: 提供商 '{p['name']}' 的 API Key 为占位符，请前往设置页面配置真实密钥")
+
+    return OpenAI(api_key=key, base_url=p["base_url"])
 
 
 def get_provider(provider_name: str) -> dict | None:
@@ -131,9 +137,15 @@ def _load_config():
         if "providers" in data and isinstance(data["providers"], list) and data["providers"]:
             PROVIDERS[:] = data["providers"]
         if "default_provider" in data:
-            globals()["DEFAULT_PROVIDER"] = data["default_provider"]
+            dp = data["default_provider"]
+            if any(p["name"] == dp for p in PROVIDERS):
+                globals()["DEFAULT_PROVIDER"] = dp
         if "default_model" in data:
-            globals()["DEFAULT_MODEL"] = data["default_model"]
+            dm = data["default_model"]
+            for p in PROVIDERS:
+                if p["name"] == DEFAULT_PROVIDER and dm in p["models"]:
+                    globals()["DEFAULT_MODEL"] = dm
+                    break
     except Exception:
         pass
 
