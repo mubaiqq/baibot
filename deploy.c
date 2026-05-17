@@ -1,20 +1,14 @@
 /*
- * baibot Control Panel - Windows GUI
- * Compile: gcc -mwindows -O2 deploy.c -o deploy.exe -lcomctl32 -lcomdlg32
- *
- * Features:
- *   - First run: detect Python → create venv → install deps → start WebUI
- *   - Control panel: start/stop WebUI, status, uninstall
- *   - Pure Win32 GUI, no console
+ * baibot Control Panel - Windows GUI (C + Win32)
+ * Compile: gcc -mwindows -O2 deploy.c -o deploy.exe -lcomctl32 -lshlwapi
  */
 
 #define WIN32_LEAN_AND_MEAN
-#define _WIN32_WINNT 0x0600
 #include <windows.h>
 #include <commctrl.h>
 #include <tlhelp32.h>
-#include <shellapi.h>
 #include <shlwapi.h>
+#include <shellapi.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -22,481 +16,304 @@
 name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
 processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
-/* ── Globals ── */
-static char    g_project_dir[MAX_PATH];
-static char    g_venv_dir[MAX_PATH];
-static char    g_python_exe[MAX_PATH];
-static char    g_pythonw_exe[MAX_PATH];
-static char    g_pip_exe[MAX_PATH];
-static char    g_marker_file[MAX_PATH];
-static char    g_log_file[MAX_PATH];
-static char    g_server_py[MAX_PATH];
-static int     g_first_run = 0;
-static int     g_is_running = 0;
-static int     g_setup_step = 0;
-static int     g_setup_total = 3;
+#define PORT      7200
+#define IDC_START 101
+#define IDC_STOP  102
+#define IDC_LOG   103
+#define IDC_UNINST 104
+#define IDC_SETUP  105
+#define IDC_URL    106
 
-static HWND    hwnd_main;
-static HWND    hwnd_status_text;
-static HWND    hwnd_url_text;
-static HWND    hwnd_btn_start;
-static HWND    hwnd_btn_stop;
-static HWND    hwnd_btn_uninstall;
-static HWND    hwnd_btn_log;
-static HWND    hwnd_progress;
-static HWND    hwnd_setup_text;
-static HWND    hwnd_setup_btn;
+static char  g_dir[MAX_PATH];
+static char  g_venv[MAX_PATH];
+static char  g_marker[MAX_PATH];
+static char  g_pythonw[MAX_PATH];
+static char  g_server[MAX_PATH];
+static char  g_log[MAX_PATH];
+static char  g_sys_python[MAX_PATH];
+static HWND  g_hwnd;
+static HWND  g_status;
+static HWND  g_url;
+static int   g_has_venv;
 
-#define WM_SETUP_STEP     (WM_USER + 100)
-#define WM_SETUP_DONE     (WM_USER + 101)
-#define WM_REFRESH_STATUS (WM_USER + 102)
+/* ── helper ── */
+static int _exists(const char *path) { return GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES; }
 
-#define PORT 7200
-
-/* ── Forward declarations ── */
-LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
-LRESULT CALLBACK SetupWndProc(HWND, UINT, WPARAM, LPARAM);
-DWORD WINAPI SetupThread(LPVOID);
-DWORD WINAPI StartWebUIThread(LPVOID);
-DWORD WINAPI StopWebUIThread(LPVOID);
-void InitPaths(void);
-int  FindSystemPython(void);
-int  IsWebUIRunning(void);
-void RefreshUI(void);
-void ShowMainPanel(void);
-void ShowSetupWizard(void);
-void RunCommand(const char *cmd, char *output, int maxlen);
-int  RunCommandWait(const char *cmd);
-
-/* ── Init paths ── */
-void InitPaths(void) {
-    GetModuleFileNameA(NULL, g_project_dir, MAX_PATH);
-    char *p = strrchr(g_project_dir, '\\');
-    if (p) *p = '\0';
-
-    snprintf(g_venv_dir,    MAX_PATH, "%s\\.venv",          g_project_dir);
-    snprintf(g_python_exe,  MAX_PATH, "%s\\.venv\\Scripts\\python.exe",  g_project_dir);
-    snprintf(g_pythonw_exe, MAX_PATH, "%s\\.venv\\Scripts\\pythonw.exe", g_project_dir);
-    snprintf(g_pip_exe,     MAX_PATH, "%s\\.venv\\Scripts\\pip.exe",     g_project_dir);
-    snprintf(g_marker_file, MAX_PATH, "%s\\.venv\\.installed",          g_project_dir);
-    snprintf(g_log_file,    MAX_PATH, "%s\\baibot.log",     g_project_dir);
-    snprintf(g_server_py,   MAX_PATH, "%s\\server.py",      g_project_dir);
-
-    g_first_run = !PathFileExistsA(g_marker_file);
+static void _init_paths(void) {
+    GetModuleFileNameA(NULL, g_dir, MAX_PATH);
+    char *p = strrchr(g_dir, '\\'); if (p) *p = 0;
+    snprintf(g_venv,    MAX_PATH, "%s\\.venv", g_dir);
+    snprintf(g_marker,  MAX_PATH, "%s\\.venv\\.installed", g_dir);
+    snprintf(g_pythonw, MAX_PATH, "%s\\.venv\\Scripts\\pythonw.exe", g_dir);
+    snprintf(g_server,  MAX_PATH, "%s\\server.py", g_dir);
+    snprintf(g_log,     MAX_PATH, "%s\\baibot.log", g_dir);
+    g_has_venv = _exists(g_marker);
 }
 
-/* ── Find system Python ── */
-int FindSystemPython(void) {
-    const char *candidates[] = {
-        NULL, /* USERPROFILE\python-sdk\... */
-        NULL, /* LOCALAPPDATA\...Python314 */
-        NULL, /* LOCALAPPDATA\...Python313 */
-        NULL, /* LOCALAPPDATA\...Python312 */
-        NULL, /* LOCALAPPDATA\...Python311 */
-        "C:\\Python313\\python.exe",
-        "C:\\Python312\\python.exe",
-        NULL
-    };
+/* ── find system python ── */
+static const char *_find_python(void) {
+    g_sys_python[0] = 0;
+    const char *home = getenv("USERPROFILE");
+    const char *lapp = getenv("LOCALAPPDATA");
 
-    char buf[MAX_PATH];
-    char *up = getenv("USERPROFILE");
-    char *la = getenv("LOCALAPPDATA");
+    const char *try[] = {NULL,NULL,NULL,NULL,NULL,NULL,
+        "C:\\Python313\\python.exe","C:\\Python312\\python.exe",NULL};
+    char b1[MAX_PATH], b2[MAX_PATH], b3[MAX_PATH], b4[MAX_PATH], b5[MAX_PATH];
 
-    if (up) { snprintf(buf, MAX_PATH, "%s\\python-sdk\\python3.13.2\\python.exe", up); candidates[0] = strdup(buf); }
-    if (la) { snprintf(buf, MAX_PATH, "%s\\Programs\\Python\\Python314\\python.exe", la); candidates[1] = strdup(buf); }
-    if (la) { snprintf(buf, MAX_PATH, "%s\\Programs\\Python\\Python313\\python.exe", la); candidates[2] = strdup(buf); }
-    if (la) { snprintf(buf, MAX_PATH, "%s\\Programs\\Python\\Python312\\python.exe", la); candidates[3] = strdup(buf); }
-    if (la) { snprintf(buf, MAX_PATH, "%s\\Programs\\Python\\Python311\\python.exe", la); candidates[4] = strdup(buf); }
+    if (home) { snprintf(b1,MAX_PATH,"%s\\python-sdk\\python3.13.2\\python.exe",home); try[0]=b1; }
+    if (lapp) { snprintf(b2,MAX_PATH,"%s\\Programs\\Python\\Python314\\python.exe",lapp); try[1]=b2; }
+    if (lapp) { snprintf(b3,MAX_PATH,"%s\\Programs\\Python\\Python313\\python.exe",lapp); try[2]=b3; }
+    if (lapp) { snprintf(b4,MAX_PATH,"%s\\Programs\\Python\\Python312\\python.exe",lapp); try[3]=b4; }
+    if (lapp) { snprintf(b5,MAX_PATH,"%s\\Programs\\Python\\Python311\\python.exe",lapp); try[4]=b5; }
 
-    for (int i = 0; i < 8; i++) {
-        if (candidates[i] && PathFileExistsA(candidates[i])) return 1;
+    for (int i = 0; try[i]; i++) {
+        if (_exists(try[i])) { strncpy(g_sys_python, try[i], MAX_PATH-1); return g_sys_python; }
     }
 
-    // Fallback: try "where python"
+    /* where python */
     FILE *fp = _popen("where python 2>nul", "r");
     if (fp) {
-        if (fgets(buf, sizeof(buf), fp)) {
-            buf[strcspn(buf, "\r\n")] = 0;
+        char line[512];
+        if (fgets(line, sizeof(line), fp)) {
+            line[strcspn(line, "\r\n")] = 0;
             _pclose(fp);
-            if (PathFileExistsA(buf)) return 1;
-        } else {
-            _pclose(fp);
-        }
+            if (_exists(line)) { strncpy(g_sys_python, line, MAX_PATH-1); return g_sys_python; }
+        } else _pclose(fp);
     }
-    return 0;
+    return NULL;
 }
 
-/* ── Is WebUI running? ── */
-int IsWebUIRunning(void) {
-    HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (hSnap == INVALID_HANDLE_VALUE) return 0;
-
-    PROCESSENTRY32 pe;
-    pe.dwSize = sizeof(pe);
+/* ── is pythonw.exe running? ── */
+static int _is_running(void) {
+    HANDLE h = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (h == INVALID_HANDLE_VALUE) return 0;
+    PROCESSENTRY32 pe = { sizeof(pe) };
     int found = 0;
-
-    if (Process32First(hSnap, &pe)) {
-        do {
-            if (stricmp(pe.szExeFile, "pythonw.exe") == 0) {
-                found = 1;
-                break;
-            }
-        } while (Process32Next(hSnap, &pe));
+    if (Process32First(h, &pe)) {
+        do { if (lstrcmpiA(pe.szExeFile, "pythonw.exe") == 0) { found = 1; break; } }
+        while (Process32Next(h, &pe));
     }
-    CloseHandle(hSnap);
+    CloseHandle(h);
     return found;
 }
 
-/* ── Run command, capture output ── */
-void RunCommand(const char *cmd, char *output, int maxlen) {
-    if (output) output[0] = 0;
-    FILE *fp = _popen(cmd, "r");
-    if (!fp) return;
-    if (output) {
-        int total = 0;
-        char line[1024];
-        while (fgets(line, sizeof(line), fp) && total < maxlen - 1) {
-            int len = (int)strlen(line);
-            if (total + len >= maxlen) break;
-            strcpy(output + total, line);
-            total += len;
-        }
-    }
-    _pclose(fp);
-}
+/* ── run command hidden, wait ── */
+static int _run_wait(const char *fmt, ...) {
+    char cmd[2048], line[3072];
+    va_list va; va_start(va, fmt); vsnprintf(cmd, sizeof(cmd), fmt, va); va_end(va);
+    snprintf(line, sizeof(line), "cmd /c \"%s\"", cmd);
 
-int RunCommandWait(const char *cmd) {
     STARTUPINFOA si = { sizeof(si) };
     PROCESS_INFORMATION pi;
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
-
-    char cmdline[1024];
-    snprintf(cmdline, sizeof(cmdline), "cmd /c \"%s\"", cmd);
-
-    if (!CreateProcessA(NULL, cmdline, NULL, NULL, FALSE,
-                        CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
+    si.dwFlags = STARTF_USESHOWWINDOW; si.wShowWindow = SW_HIDE;
+    if (!CreateProcessA(NULL, line, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
         return -1;
-
     WaitForSingleObject(pi.hProcess, INFINITE);
-    DWORD exitCode;
-    GetExitCodeProcess(pi.hProcess, &exitCode);
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
-    return (int)exitCode;
+    DWORD ec; GetExitCodeProcess(pi.hProcess, &ec);
+    CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
+    return (int)ec;
 }
 
-/* ── Refresh UI ── */
-void RefreshUI(void) {
-    g_is_running = IsWebUIRunning();
-
-    if (g_is_running) {
-        SetWindowTextA(hwnd_status_text,
-            "[ONLINE]  baibot WebUI running");
-        char url[256];
-        snprintf(url, sizeof(url), "http://localhost:%d", PORT);
-        SetWindowTextA(hwnd_url_text, url);
-        EnableWindow(hwnd_btn_start, FALSE);
-        EnableWindow(hwnd_btn_stop, TRUE);
-    } else {
-        SetWindowTextA(hwnd_status_text,
-            "[OFFLINE]  WebUI not running");
-        SetWindowTextA(hwnd_url_text, "http://localhost:7200");
-        EnableWindow(hwnd_btn_start, TRUE);
-        EnableWindow(hwnd_btn_stop, FALSE);
-    }
-}
-
-/* ── Start WebUI (background thread) ── */
-DWORD WINAPI StartWebUIThread(LPVOID param) {
-    (void)param;
-
-    SetWindowTextA(hwnd_status_text, "Starting WebUI...");
-    EnableWindow(hwnd_btn_start, FALSE);
+/* ── start webui in background ── */
+static void _start_webui(void) {
+    SetWindowTextA(g_status, "Starting WebUI...");
+    InvalidateRect(g_hwnd, NULL, TRUE);
 
     char cmd[1024];
-    snprintf(cmd, sizeof(cmd), "\"%s\" \"%s\"", g_pythonw_exe, g_server_py);
-
+    snprintf(cmd, sizeof(cmd), "\"%s\" \"%s\"", g_pythonw, g_server);
     STARTUPINFOA si = { sizeof(si) };
     PROCESS_INFORMATION pi;
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
-
-    if (CreateProcessA(NULL, cmd, NULL, NULL, FALSE,
-                       CREATE_NO_WINDOW | DETACHED_PROCESS,
-                       NULL, g_project_dir, &si, &pi)) {
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-    }
-
-    Sleep(2000);
-    PostMessageA(hwnd_main, WM_REFRESH_STATUS, 0, 0);
-    return 0;
+    si.dwFlags = STARTF_USESHOWWINDOW; si.wShowWindow = SW_HIDE;
+    CreateProcessA(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, g_dir, &si, &pi);
+    if (pi.hProcess) { CloseHandle(pi.hProcess); CloseHandle(pi.hThread); }
+    Sleep(2500);
 }
 
-/* ── Stop WebUI (background thread) ── */
-DWORD WINAPI StopWebUIThread(LPVOID param) {
-    (void)param;
-    system("taskkill /IM pythonw.exe /F >nul 2>&1");
-    Sleep(500);
-    PostMessageA(hwnd_main, WM_REFRESH_STATUS, 0, 0);
-    return 0;
+/* ── refresh ui ── */
+static void _refresh(void) {
+    int on = _is_running();
+    SetWindowTextA(g_status, on ? "[ONLINE]  baibot WebUI" : "[OFFLINE]");
+    SetWindowTextA(g_url, on ? "http://localhost:7200" : "Not running");
+
+    EnableWindow(GetDlgItem(g_hwnd, IDC_START), !on && g_has_venv);
+    EnableWindow(GetDlgItem(g_hwnd, IDC_STOP), on);
+    EnableWindow(GetDlgItem(g_hwnd, IDC_SETUP), !g_has_venv);
+
+    /* flash window if running */
+    ShowWindow(g_hwnd, SW_SHOW);
 }
 
-/* ── Setup thread ── */
-DWORD WINAPI SetupThread(LPVOID param) {
-    HWND hwnd = (HWND)param;
-    char cmd[2048];
-    int rc;
-
-    /* Step 1: Create venv */
-    PostMessageA(hwnd, WM_SETUP_STEP, 0, (LPARAM)"Creating virtual environment...");
-    SendMessageA(hwnd_progress, PBM_SETPOS, 1, 0);
-
-    snprintf(cmd, sizeof(cmd), "\"%s\" -m venv \"%s\"",
-             getenv("PYTHON_SYS") ? getenv("PYTHON_SYS") : "python",
-             g_venv_dir);
-    rc = RunCommandWait(cmd);
-    if (rc != 0) {
-        PostMessageA(hwnd, WM_SETUP_STEP, 0, (LPARAM)"FAILED: venv creation failed");
-        return 1;
+/* ── do setup ── */
+static int _do_setup(void) {
+    const char *py = _find_python();
+    if (!py) {
+        MessageBoxA(g_hwnd,
+            "Python 3.10+ not found!\n\n"
+            "Please install from: https://www.python.org/downloads/\n"
+            "Check 'Add Python to PATH' during install.",
+            "baibot - Error", MB_OK | MB_ICONERROR);
+        return 0;
     }
 
-    /* Step 2: Install pip deps */
-    PostMessageA(hwnd, WM_SETUP_STEP, 0, (LPARAM)"Installing dependencies...");
-    SendMessageA(hwnd_progress, PBM_SETPOS, 2, 0);
-
-    snprintf(cmd, sizeof(cmd),
-             "\"%s\" install --quiet --upgrade pip && \"%s\" install --quiet -r \"%s\\requirements.txt\"",
-             g_pip_exe, g_pip_exe, g_project_dir);
-    rc = RunCommandWait(cmd);
-    if (rc != 0) {
-        PostMessageA(hwnd, WM_SETUP_STEP, 0, (LPARAM)"FAILED: pip install failed - check network");
-        return 1;
+    /* step 1: venv */
+    SetWindowTextA(g_status, "Creating virtual environment...");
+    InvalidateRect(g_hwnd, NULL, TRUE);
+    if (_run_wait("\"%s\" -m venv \"%s\"", py, g_venv) != 0) {
+        MessageBoxA(g_hwnd, "Virtual environment creation failed.", "baibot", MB_OK | MB_ICONERROR);
+        return 0;
     }
 
-    /* Mark installed */
-    HANDLE hf = CreateFileA(g_marker_file, GENERIC_WRITE, 0, NULL,
-                            CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    /* step 2: pip install */
+    SetWindowTextA(g_status, "Installing dependencies (may take a minute)...");
+    InvalidateRect(g_hwnd, NULL, TRUE);
+
+    char pp[MAX_PATH];
+    snprintf(pp, MAX_PATH, "%s\\Scripts\\pip.exe", g_venv);
+    if (_run_wait("\"%s\" install -q -r \"%s\\requirements.txt\"", pp, g_dir) != 0) {
+        MessageBoxA(g_hwnd, "Dependency install failed.\nCheck network or proxy settings.", "baibot", MB_OK | MB_ICONERROR);
+        return 0;
+    }
+
+    /* mark */
+    HANDLE hf = CreateFileA(g_marker, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hf != INVALID_HANDLE_VALUE) CloseHandle(hf);
 
-    /* Step 3: Start WebUI */
-    PostMessageA(hwnd, WM_SETUP_STEP, 0, (LPARAM)"Starting WebUI...");
-    SendMessageA(hwnd_progress, PBM_SETPOS, 3, 0);
-    Sleep(500);
+    g_has_venv = 1;
+    return 1;
+}
 
-    PostMessageA(hwnd, WM_SETUP_DONE, 0, 0);
+/* ── setup + start thread ── */
+static DWORD WINAPI _setup_and_start(LPVOID p) {
+    (void)p;
+    if (_do_setup()) {
+        SetWindowTextA(g_status, "Starting WebUI...");
+        InvalidateRect(g_hwnd, NULL, TRUE);
+        _start_webui();
+    }
+    _refresh();
     return 0;
 }
 
-/* ── Setup wizard window proc ── */
-LRESULT CALLBACK SetupWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+/* ── start thread ── */
+static DWORD WINAPI _start_thread(LPVOID p) {
+    (void)p;
+    _start_webui();
+    _refresh();
+    return 0;
+}
+
+/* ── stop thread ── */
+static DWORD WINAPI _stop_thread(LPVOID p) {
+    (void)p;
+    system("taskkill /IM pythonw.exe /F >nul 2>&1");
+    Sleep(600);
+    _refresh();
+    return 0;
+}
+
+/* ── wndproc ── */
+static LRESULT CALLBACK _wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_CREATE: {
-        /* Title */
-        CreateWindowA("STATIC", "baibot Setup Wizard",
+        g_hwnd = hwnd;
+
+        /* title */
+        CreateWindowA("STATIC", "baibot Control Panel",
             WS_VISIBLE | WS_CHILD | SS_CENTER,
-            20, 20, 360, 30, hwnd, NULL, NULL, NULL);
+            15, 15, 320, 22, hwnd, NULL, NULL, NULL);
 
-        /* Setup text */
-        hwnd_setup_text = CreateWindowA("STATIC", "Preparing environment...",
-            WS_VISIBLE | WS_CHILD | SS_LEFT,
-            20, 60, 360, 20, hwnd, NULL, NULL, NULL);
+        /* status */
+        g_status = CreateWindowA("STATIC", "[OFFLINE]",
+            WS_VISIBLE | WS_CHILD | SS_CENTER,
+            15, 42, 320, 20, hwnd, NULL, NULL, NULL);
 
-        /* Progress bar */
-        hwnd_progress = CreateWindowA(PROGRESS_CLASSA, NULL,
-            WS_VISIBLE | WS_CHILD | PBS_SMOOTH,
-            20, 90, 360, 25, hwnd, (HMENU)1, NULL, NULL);
-        SendMessageA(hwnd_progress, PBM_SETRANGE, 0, MAKELPARAM(0, 3));
-        SendMessageA(hwnd_progress, PBM_SETPOS, 0, 0);
+        /* url box */
+        g_url = CreateWindowA("EDIT", "",
+            WS_VISIBLE | WS_CHILD | ES_READONLY | ES_CENTER | WS_BORDER,
+            50, 72, 250, 24, hwnd, (HMENU)IDC_URL, NULL, NULL);
+        {
+            HFONT f = CreateFontA(15,0,0,0,FW_SEMIBOLD,0,0,0,DEFAULT_CHARSET,
+                OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,DEFAULT_QUALITY,
+                FIXED_PITCH|FF_MODERN,"Consolas");
+            SendMessageA(g_url, WM_SETFONT, (WPARAM)f, TRUE);
+        }
 
-        /* Cancel button */
-        hwnd_setup_btn = CreateWindowA("BUTTON", "Cancel",
+        /* buttons row 1 */
+        CreateWindowA("BUTTON", "Start WebUI",
             WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-            310, 140, 70, 28, hwnd, (HMENU)2, NULL, NULL);
+            25, 112, 105, 34, hwnd, (HMENU)IDC_START, NULL, NULL);
 
-        /* Start setup in background thread */
-        CreateThread(NULL, 0, SetupThread, hwnd, 0, NULL);
+        CreateWindowA("BUTTON", "Stop WebUI",
+            WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+            135, 112, 105, 34, hwnd, (HMENU)IDC_STOP, NULL, NULL);
+
+        CreateWindowA("BUTTON", "View Log",
+            WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+            245, 112, 105, 34, hwnd, (HMENU)IDC_LOG, NULL, NULL);
+
+        /* setup / uninstall row */
+        CreateWindowA("BUTTON", "Setup (install)",
+            WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+            25, 155, 130, 30, hwnd, (HMENU)IDC_SETUP, NULL, NULL);
+
+        CreateWindowA("BUTTON", "Uninstall",
+            WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+            195, 155, 130, 30, hwnd, (HMENU)IDC_UNINST, NULL, NULL);
+
+        _refresh();
         return 0;
     }
 
-    case WM_SETUP_STEP:
-        SetWindowTextA(hwnd_setup_text, (LPCSTR)lp);
-        return 0;
-
-    case WM_SETUP_DONE:
-        SetWindowTextA(hwnd_setup_text, "Setup complete! Launching control panel...");
-        SendMessageA(hwnd_progress, PBM_SETPOS, 3, 0);
-        Sleep(1000);
-        ShowMainPanel();
-        return 0;
-
-    case WM_COMMAND:
-        if (LOWORD(wp) == 2) {
-            ShowMainPanel();
-            return 0;
-        }
-        break;
-
-    case WM_CLOSE:
-        DestroyWindow(hwnd);
-        return 0;
-    }
-    return DefWindowProcA(hwnd, msg, wp, lp);
-}
-
-void ShowSetupWizard(void) {
-    /* Find system python first */
-    if (!FindSystemPython()) {
-        MessageBoxA(hwnd_main,
-            "Python 3.10+ not found!\n\n"
-            "Please install Python from https://www.python.org/downloads/\n"
-            "Make sure to check 'Add Python to PATH' during installation.",
-            "baibot - Error", MB_OK | MB_ICONERROR);
-        PostQuitMessage(0);
-        return;
-    }
-
-    /* Hide main panel, show wizard */
-    DestroyWindow(hwnd_status_text);
-    DestroyWindow(hwnd_url_text);
-    DestroyWindow(hwnd_btn_start);
-    DestroyWindow(hwnd_btn_stop);
-    DestroyWindow(hwnd_btn_uninstall);
-    DestroyWindow(hwnd_btn_log);
-
-    WNDCLASSA wc = {0};
-    wc.lpfnWndProc = SetupWndProc;
-    wc.hInstance = GetModuleHandleA(NULL);
-    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-    wc.lpszClassName = "baibotSetupWnd";
-    RegisterClassA(&wc);
-
-    HWND hwndSetup = CreateWindowA("baibotSetupWnd", "baibot Setup",
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
-        CW_USEDEFAULT, CW_USEDEFAULT, 420, 220,
-        hwnd_main, NULL, wc.hInstance, NULL);
-
-    /* Center relative to main */
-    RECT rMain, rSetup;
-    GetWindowRect(hwnd_main, &rMain);
-    GetWindowRect(hwndSetup, &rSetup);
-    int sw = rSetup.right - rSetup.left;
-    int sh = rSetup.bottom - rSetup.top;
-    SetWindowPos(hwndSetup, NULL,
-        rMain.left + (rMain.right - rMain.left - sw) / 2,
-        rMain.top + (rMain.bottom - rMain.top - sh) / 2,
-        0, 0, SWP_NOSIZE | SWP_NOZORDER);
-
-    ShowWindow(hwnd_main, SW_HIDE);
-}
-
-void ShowMainPanel(void) {
-    ShowWindow(hwnd_main, SW_SHOW);
-
-    /* Recreate child controls */
-    hwnd_status_text = CreateWindowA("STATIC", "[OFFLINE]  WebUI not running",
-        WS_VISIBLE | WS_CHILD | SS_CENTER,
-        20, 15, 360, 25, hwnd_main, NULL, NULL, NULL);
-
-    hwnd_url_text = CreateWindowA("EDIT", "http://localhost:7200",
-        WS_VISIBLE | WS_CHILD | ES_READONLY | ES_CENTER | WS_BORDER,
-        60, 55, 280, 22, hwnd_main, NULL, NULL, NULL);
-
-    SendMessageA(hwnd_url_text, WM_SETFONT,
-        (WPARAM)CreateFontA(16, 0, 0, 0, FW_NORMAL, 0, 0, 0,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            DEFAULT_QUALITY, DEFAULT_PITCH, "Consolas"), TRUE);
-
-    hwnd_btn_start = CreateWindowA("BUTTON", "Start WebUI",
-        WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-        40, 100, 110, 35, hwnd_main, (HMENU)10, NULL, NULL);
-
-    hwnd_btn_stop = CreateWindowA("BUTTON", "Stop WebUI",
-        WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-        155, 100, 110, 35, hwnd_main, (HMENU)11, NULL, NULL);
-
-    hwnd_btn_log = CreateWindowA("BUTTON", "View Log",
-        WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-        270, 100, 110, 35, hwnd_main, (HMENU)12, NULL, NULL);
-
-    hwnd_btn_uninstall = CreateWindowA("BUTTON", "Uninstall",
-        WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-        140, 150, 110, 30, hwnd_main, (HMENU)13, NULL, NULL);
-
-    RefreshUI();
-}
-
-/* ── Main window proc ── */
-LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
-    switch (msg) {
-    case WM_CREATE:
-        if (g_first_run) {
-            ShowSetupWizard();
-        } else {
-            ShowMainPanel();
-        }
-        return 0;
-
-    case WM_COMMAND:
-        switch (LOWORD(wp)) {
-        case 10: /* Start */
-            CreateThread(NULL, 0, StartWebUIThread, NULL, 0, NULL);
-            break;
-        case 11: /* Stop */
-            CreateThread(NULL, 0, StopWebUIThread, NULL, 0, NULL);
-            break;
-        case 12: /* View Log */
-            if (PathFileExistsA(g_log_file)) {
-                ShellExecuteA(hwnd, "open", "notepad.exe", g_log_file, NULL, SW_SHOW);
-            } else {
+    case WM_COMMAND: {
+        int id = LOWORD(wp);
+        if (id == IDC_START) {
+            SetWindowTextA(g_status, "Launching...");
+            InvalidateRect(hwnd, NULL, TRUE);
+            CreateThread(NULL, 0, _start_thread, NULL, 0, NULL);
+        } else if (id == IDC_STOP) {
+            CreateThread(NULL, 0, _stop_thread, NULL, 0, NULL);
+        } else if (id == IDC_SETUP) {
+            SetWindowTextA(g_status, "Setting up...");
+            InvalidateRect(hwnd, NULL, TRUE);
+            EnableWindow(GetDlgItem(hwnd, IDC_SETUP), FALSE);
+            CreateThread(NULL, 0, _setup_and_start, NULL, 0, NULL);
+        } else if (id == IDC_LOG) {
+            if (_exists(g_log))
+                ShellExecuteA(hwnd, "open", "notepad.exe", g_log, NULL, SW_SHOW);
+            else
                 MessageBoxA(hwnd, "No log file yet.", "baibot", MB_OK | MB_ICONINFORMATION);
-            }
-            break;
-        case 13: /* Uninstall */
+        } else if (id == IDC_UNINST) {
             if (MessageBoxA(hwnd,
-                "This will remove the virtual environment,\n"
-                "logs, and persistent configuration.\n\n"
-                "Source code will NOT be deleted.\n\n"
-                "Continue?",
+                "Remove virtual environment, logs, and config?\n\n"
+                "Source code will NOT be deleted.",
                 "baibot - Uninstall", MB_YESNO | MB_ICONWARNING) == IDYES) {
 
-                if (g_is_running) {
-                    system("taskkill /IM pythonw.exe /F >nul 2>&1");
-                    Sleep(500);
-                }
+                if (_is_running()) system("taskkill /IM pythonw.exe /F >nul 2>&1");
 
-                char cmd[1024];
-                snprintf(cmd, sizeof(cmd), "rmdir /s /q \"%s\"", g_venv_dir);
+                char cmd[MAX_PATH+32];
+                snprintf(cmd, sizeof(cmd), "rmdir /s /q \"%s\"", g_venv);
                 system(cmd);
-                DeleteFileA(g_log_file);
-                snprintf(cmd, sizeof(cmd), "%s\\config.json", g_project_dir);
-                DeleteFileA(cmd);
-                snprintf(cmd, sizeof(cmd), "%s\\plugin_config.json", g_project_dir);
-                DeleteFileA(cmd);
-                snprintf(cmd, sizeof(cmd), "%s\\app_config.json", g_project_dir);
-                DeleteFileA(cmd);
+                DeleteFileA(g_log);
+                snprintf(cmd, sizeof(cmd), "%s\\config.json", g_dir); DeleteFileA(cmd);
+                snprintf(cmd, sizeof(cmd), "%s\\plugin_config.json", g_dir); DeleteFileA(cmd);
+                snprintf(cmd, sizeof(cmd), "%s\\app_config.json", g_dir); DeleteFileA(cmd);
 
+                g_has_venv = 0;
+                _refresh();
                 MessageBoxA(hwnd,
-                    "Uninstall complete.\n\n"
-                    "Source code is preserved.\n"
-                    "Run deploy.exe again to reinstall.",
+                    "Uninstall complete.\nSource code preserved.\n"
+                    "Click 'Setup' to reinstall.",
                     "baibot", MB_OK | MB_ICONINFORMATION);
-                PostQuitMessage(0);
             }
-            break;
         }
         return 0;
-
-    case WM_REFRESH_STATUS:
-        RefreshUI();
-        return 0;
+    }
 
     case WM_CTLCOLORSTATIC: {
         HDC hdc = (HDC)wp;
         SetBkMode(hdc, TRANSPARENT);
-        SetTextColor(hdc, RGB(40, 40, 40));
-        return (LRESULT)GetStockObject(WHITE_BRUSH);
+        SetTextColor(hdc, GetSysColor(COLOR_WINDOWTEXT));
+        return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
     }
 
     case WM_DESTROY:
@@ -507,42 +324,41 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 }
 
 /* ── WinMain ── */
-int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int nShow) {
-    (void)hPrev;
-    (void)cmdLine;
+int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmd, int nShow) {
+    (void)hPrev; (void)cmd;
 
-    InitPaths();
+    _init_paths();
 
-    INITCOMMONCONTROLSEX icc = { sizeof(icc), ICC_PROGRESS_CLASS };
+    INITCOMMONCONTROLSEX icc = { sizeof(icc), ICC_STANDARD_CLASSES };
     InitCommonControlsEx(&icc);
 
     WNDCLASSA wc = {0};
-    wc.lpfnWndProc   = WndProc;
+    wc.lpfnWndProc   = _wndproc;
     wc.hInstance     = hInst;
     wc.hCursor       = LoadCursorA(NULL, IDC_ARROW);
     wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-    wc.lpszClassName = "baibotMainWnd";
+    wc.lpszClassName = "baibotPanel";
     RegisterClassA(&wc);
 
-    hwnd_main = CreateWindowA("baibotMainWnd", "baibot Control Panel",
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE,
-        CW_USEDEFAULT, CW_USEDEFAULT, 420, 250,
+    HWND hwnd = CreateWindowA("baibotPanel", "baibot Control Panel",
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
+        CW_USEDEFAULT, CW_USEDEFAULT, 370, 240,
         NULL, NULL, hInst, NULL);
 
-    /* Center window */
-    RECT rc;
-    GetWindowRect(hwnd_main, &rc);
-    int w = rc.right - rc.left;
-    int h = rc.bottom - rc.top;
-    int x = (GetSystemMetrics(SM_CXSCREEN) - w) / 2;
-    int y = (GetSystemMetrics(SM_CYSCREEN) - h) / 2;
-    SetWindowPos(hwnd_main, NULL, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+    RECT r; GetWindowRect(hwnd, &r);
+    int w = r.right - r.left, h = r.bottom - r.top;
+    SetWindowPos(hwnd, NULL,
+        (GetSystemMetrics(SM_CXSCREEN) - w) / 2,
+        (GetSystemMetrics(SM_CYSCREEN) - h) / 2,
+        0, 0, SWP_NOSIZE | SWP_NOZORDER);
+
+    ShowWindow(hwnd, nShow);
+    UpdateWindow(hwnd);
 
     MSG msg;
     while (GetMessageA(&msg, NULL, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessageA(&msg);
     }
-
     return (int)msg.wParam;
 }
