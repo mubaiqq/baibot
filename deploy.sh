@@ -3,7 +3,8 @@ set -e
 
 # ============================================================
 # baibot 一键部署脚本 (Linux)
-# 用法: bash deploy.sh [start|stop|status|install]
+# 用法: bash deploy.sh              → 交互菜单
+#       bash deploy.sh start|cli|stop|restart|status|install|uninstall|service
 # ============================================================
 
 RED='\033[0;31m'
@@ -62,14 +63,14 @@ check_system() {
                 yum install -y -q $missing
             fi
         else
-            warn "请用 root 权限运行: sudo bash deploy.sh install"
+            warn "请用 root 权限运行: sudo bash deploy.sh"
+            warn "或手动安装: apt install $missing"
         fi
     fi
 }
 
 create_venv() {
     if [ -d "$VENV_DIR" ]; then
-        ok "虚拟环境已存在，跳过创建"
         return
     fi
     log "创建虚拟环境..."
@@ -84,19 +85,27 @@ install_deps() {
     ok "依赖安装完成"
 }
 
+ensure_env() {
+    check_python
+    check_system
+    create_venv
+    install_deps
+}
+
 install_service() {
     local service_file="/etc/systemd/system/baibot.service"
-    local user="${SUDO_USER:-$USER}"
 
     if [ -f "$service_file" ]; then
-        warn "systemd 服务已存在，跳过创建"
+        warn "systemd 服务已存在"
         return
     fi
 
     if [ "$(id -u)" -ne 0 ]; then
-        warn "创建 systemd 服务需要 root 权限: sudo bash deploy.sh install"
-        return
+        warn "创建 systemd 服务需要 root 权限，请用 sudo 运行"
+        return 1
     fi
+
+    ensure_env
 
     log "创建 systemd 服务..."
     cat > "$service_file" << EOF
@@ -106,7 +115,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=$user
+User=${SUDO_USER:-$USER}
 WorkingDirectory=$PROJECT_DIR
 ExecStart=$VENV_DIR/bin/python $PROJECT_DIR/server.py
 Restart=on-failure
@@ -121,10 +130,28 @@ EOF
     systemctl enable baibot
     ok "systemd 服务已创建并设为开机启动"
     echo ""
-    echo -e "  ${GREEN}启动:${NC} sudo systemctl start baibot"
-    echo -e "  ${GREEN}停止:${NC} sudo systemctl stop baibot"
-    echo -e "  ${GREEN}状态:${NC} sudo systemctl status baibot"
-    echo -e "  ${GREEN}日志:${NC} sudo journalctl -u baibot -f"
+    echo -e "  ${GREEN}systemctl start baibot${NC}   启动"
+    echo -e "  ${GREEN}systemctl stop baibot${NC}    停止"
+    echo -e "  ${GREEN}systemctl status baibot${NC}  状态"
+    echo -e "  ${GREEN}journalctl -u baibot -f${NC}  日志"
+}
+
+uninstall_service() {
+    local service_file="/etc/systemd/system/baibot.service"
+
+    if [ -f "$service_file" ]; then
+        if [ "$(id -u)" -ne 0 ]; then
+            warn "删除 systemd 服务需要 root 权限，请用 sudo 运行"
+            return 1
+        fi
+        systemctl stop baibot 2>/dev/null || true
+        systemctl disable baibot 2>/dev/null || true
+        rm -f "$service_file"
+        systemctl daemon-reload
+        ok "systemd 服务已删除"
+    else
+        warn "未找到 systemd 服务"
+    fi
 }
 
 get_ip() {
@@ -136,38 +163,27 @@ get_ip() {
     echo "${ip:-localhost}"
 }
 
-show_menu() {
-    echo ""
-    echo -e "${WHITE}请选择运行模式:${NC}"
-    echo ""
-    echo -e "  ${GREEN}[1]${NC} 命令行聊天  (terminal chat)"
-    echo -e "  ${GREEN}[2]${NC} WebUI 界面  (浏览器访问)"
-    echo ""
-    read -p "请输入数字 (1 或 2): " choice
+running() {
+    [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null
+}
 
-    case "$choice" in
-        1)
-            echo ""
-            log "启动命令行聊天模式..."
-            cd "$PROJECT_DIR"
-            exec "$VENV_DIR/bin/python" main.py
-            ;;
-        2)
-            start_webui
-            ;;
-        *)
-            err "无效输入，请输入 1 或 2"
-            show_menu
-            ;;
-    esac
+start_cli() {
+    ensure_env
+    echo ""
+    log "启动命令行聊天模式..."
+    echo ""
+    cd "$PROJECT_DIR"
+    exec "$VENV_DIR/bin/python" main.py
 }
 
 start_webui() {
-    # 先杀掉旧 PID
-    if [ -f "$PID_FILE" ]; then
+    ensure_env
+
+    if running; then
         local old_pid=$(cat "$PID_FILE")
         kill "$old_pid" 2>/dev/null || true
         rm -f "$PID_FILE"
+        sleep 1
     fi
 
     log "启动 WebUI 服务..."
@@ -176,7 +192,7 @@ start_webui() {
     echo $! > "$PID_FILE"
     sleep 2
 
-    if kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+    if running; then
         local ip=$(get_ip)
         echo ""
         echo -e "  ╔══════════════════════════════════════╗"
@@ -184,28 +200,27 @@ start_webui() {
         echo -e "  ╠══════════════════════════════════════╣"
         echo -e "  ║                                      ║"
         echo -e "  ║   ${WHITE}本地访问:${NC}                          ║"
-        echo -e "  ║   http://localhost:$PORT                  ║"
+        printf "  ║   http://localhost:%-5d              ║\n" $PORT
         if [ "$ip" != "localhost" ] && [ "$ip" != "127.0.0.1" ]; then
         echo -e "  ║                                      ║"
         echo -e "  ║   ${WHITE}局域网访问:${NC}                        ║"
-        echo -e "  ║   http://$ip:$PORT        ║"
+        printf "  ║   http://%s:%-5d     ║\n" "$ip" $PORT
         fi
         echo -e "  ║                                      ║"
         echo -e "  ╠══════════════════════════════════════╣"
-        echo -e "  ║   ${YELLOW}停止:  bash deploy.sh stop${NC}          ║"
-        echo -e "  ║   ${YELLOW}状态:  bash deploy.sh status${NC}        ║"
-        echo -e "  ║   ${YELLOW}日志:  tail -f baibot.log${NC}          ║"
+        echo -e "  ║   ${YELLOW}返回菜单: bash deploy.sh${NC}            ║"
+        echo -e "  ║   ${YELLOW}日志:     tail -f baibot.log${NC}      ║"
         echo -e "  ╚══════════════════════════════════════╝"
         echo ""
     else
         err "启动失败，查看日志: cat $LOG_FILE"
         rm -f "$PID_FILE"
-        exit 1
+        return 1
     fi
 }
 
 stop_server() {
-    if [ ! -f "$PID_FILE" ]; then
+    if ! running; then
         warn "服务未运行"
         return
     fi
@@ -216,76 +231,184 @@ stop_server() {
     rm -f "$PID_FILE"
 }
 
+restart_webui() {
+    stop_server
+    start_webui
+}
+
 show_status() {
-    if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+    if running; then
         local pid=$(cat "$PID_FILE")
         local ip=$(get_ip)
         echo ""
         echo -e "  ${GREEN}运行中${NC}  PID: $pid  端口: $PORT"
-        echo -e "  本地: http://localhost:$PORT"
+        echo -e "  本地:   http://localhost:$PORT"
         [ "$ip" != "localhost" ] && [ "$ip" != "127.0.0.1" ] && echo -e "  局域网: http://$ip:$PORT"
         local uptime=$(ps -o etime= -p "$pid" 2>/dev/null | tr -d ' ')
         [ -n "$uptime" ] && echo -e "  运行时间: $uptime"
         echo ""
     else
+        echo ""
         echo -e "  ${YELLOW}未运行${NC}"
+        echo ""
     fi
 }
 
-# ---- Main ----
-echo ""
-echo -e "${CYAN}╔══════════════════════════════════╗${NC}"
-echo -e "${CYAN}║     baibot · 小白 一键部署     ║${NC}"
-echo -e "${CYAN}╚══════════════════════════════════╝${NC}"
-echo ""
+uninstall_all() {
+    echo ""
+    echo -e "${YELLOW}此操作将删除虚拟环境、PID 文件、日志和 systemd 服务${NC}"
+    echo -e "${YELLOW}项目源代码不会被删除${NC}"
+    echo ""
+    read -p "确认卸载？输入 yes 继续: " confirm
+    if [ "$confirm" != "yes" ]; then
+        echo "已取消"
+        return
+    fi
 
-check_python
+    stop_server
 
-ACTION="${1:-start}"
+    if [ "$(id -u)" -eq 0 ]; then
+        uninstall_service
+    else
+        warn "跳过 systemd 服务删除（需要 root）"
+    fi
+
+    rm -rf "$VENV_DIR" 2>/dev/null || true
+    rm -f "$PID_FILE" "$LOG_FILE" 2>/dev/null || true
+    rm -f "$PROJECT_DIR/config.json" "$PROJECT_DIR/plugin_config.json" "$PROJECT_DIR/app_config.json" 2>/dev/null || true
+    rm -rf "$PROJECT_DIR/__pycache__" "$PROJECT_DIR/tools/__pycache__" 2>/dev/null || true
+    ok "卸载完成！项目源码保留在 $PROJECT_DIR"
+}
+
+# ============================================================
+# 交互主菜单
+# ============================================================
+
+show_main_menu() {
+    clear 2>/dev/null || true
+    echo ""
+    echo -e "${CYAN}╔══════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║     baibot · 小白  控制面板     ║${NC}"
+    echo -e "${CYAN}╚══════════════════════════════════╝${NC}"
+    echo ""
+
+    check_python
+
+    if running; then
+        local pid=$(cat "$PID_FILE")
+        echo -e "  ${GREEN}● WebUI 运行中${NC}  (PID: $pid)  http://localhost:$PORT"
+    else
+        echo -e "  ${YELLOW}○ WebUI 未运行${NC}"
+    fi
+
+    echo ""
+    echo -e "  ${WHITE}── 启动 ──${NC}"
+    echo -e "  ${GREEN}[1]${NC} 命令行聊天"
+    echo -e "  ${GREEN}[2]${NC} 启动 WebUI"
+    echo ""
+    echo -e "  ${WHITE}── 管理 ──${NC}"
+    echo -e "  ${GREEN}[3]${NC} 重启 WebUI"
+    echo -e "  ${GREEN}[4]${NC} 停止 WebUI"
+    echo -e "  ${GREEN}[5]${NC} 查看状态"
+    echo -e "  ${GREEN}[6]${NC} 查看日志"
+    echo ""
+    echo -e "  ${WHITE}── 系统 ──${NC}"
+    echo -e "  ${GREEN}[7]${NC} 安装 systemd 开机自启"
+    echo -e "  ${GREEN}[8]${NC} 卸载（删除 venv / 配置）"
+    echo -e "  ${GREEN}[9]${NC} 更新依赖"
+    echo ""
+    echo -e "  ${GREEN}[0]${NC} 退出"
+    echo ""
+    read -p "请输入数字: " choice
+
+    case "$choice" in
+        1) start_cli ;;
+        2) start_webui; press_enter ;;
+        3) restart_webui; press_enter ;;
+        4) stop_server; press_enter ;;
+        5) show_status; press_enter ;;
+        6) show_log; press_enter ;;
+        7) install_service; press_enter ;;
+        8) uninstall_all; press_enter ;;
+        9) update_deps; press_enter ;;
+        0) echo ""; exit 0 ;;
+        *) err "无效输入"; press_enter ;;
+    esac
+}
+
+show_log() {
+    if [ -f "$LOG_FILE" ]; then
+        echo ""
+        tail -30 "$LOG_FILE"
+        echo ""
+    else
+        warn "日志文件不存在"
+    fi
+}
+
+update_deps() {
+    ensure_env
+    log "更新 Python 依赖..."
+    "$VENV_DIR/bin/pip" install --upgrade pip -q
+    "$VENV_DIR/bin/pip" install --upgrade -r "$PROJECT_DIR/requirements.txt" -q
+    ok "依赖更新完成"
+}
+
+press_enter() {
+    echo ""
+    read -p "按 Enter 返回菜单..." _
+    show_main_menu
+}
+
+# ============================================================
+# 命令行参数兼容
+# ============================================================
+
+ACTION="${1:-menu}"
 
 case "$ACTION" in
-    install)
-        check_system
-        create_venv
-        install_deps
-        install_service
-        echo ""
-        ok "安装完成！运行 'bash deploy.sh start' 选择运行模式"
+    menu)
+        show_main_menu
         ;;
-    start)
-        create_venv
-        install_deps
-        show_menu
+    cli)
+        start_cli
+        ;;
+    start|webui)
+        start_webui
         ;;
     stop)
         stop_server
         ;;
     restart)
-        stop_server
-        show_menu
+        restart_webui
         ;;
     status)
         show_status
         ;;
-    service)
+    log)
+        show_log
+        ;;
+    install)
         install_service
         ;;
-    cli)
-        create_venv
-        install_deps
-        log "启动命令行聊天模式..."
-        cd "$PROJECT_DIR"
-        exec "$VENV_DIR/bin/python" main.py
+    uninstall)
+        uninstall_all
+        ;;
+    update)
+        update_deps
         ;;
     *)
-        echo "用法: bash deploy.sh [install|start|stop|restart|status|cli|service]"
+        echo "用法: bash deploy.sh [命令]"
         echo ""
-        echo "  install   完整安装（创建 venv、安装依赖、注册 systemd 服务）"
-        echo "  start     安装依赖后选择运行模式 (CLI 或 WebUI)"
-        echo "  cli       直接进入命令行聊天模式"
-        echo "  stop      停止后台 WebUI 服务"
-        echo "  restart   停止并重新选择模式"
-        echo "  status    查看运行状态"
-        echo "  service   仅注册 systemd 服务（需 root）"
+        echo "  无参数      交互式控制面板菜单"
+        echo "  cli         直接进入命令行聊天"
+        echo "  start       后台启动 WebUI"
+        echo "  stop        停止 WebUI"
+        echo "  restart     重启 WebUI"
+        echo "  status      查看运行状态"
+        echo "  log         查看最近日志"
+        echo "  install     注册 systemd 服务（需 root）"
+        echo "  uninstall   卸载 venv / 配置 / systemd"
+        echo "  update      更新 Python 依赖"
         ;;
 esac

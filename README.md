@@ -97,35 +97,53 @@ python server.py
 git clone https://github.com/mubaiqq/baibot.git
 cd agent
 
-# 一键启动（自动装依赖，交互选择运行模式）
-bash deploy.sh start
+# 启动控制面板（交互菜单）
+bash deploy.sh
 ```
 
-启动后会提示选择：
+启动后显示**交互式控制面板**：
 
 ```
-请选择运行模式:
+╔══════════════════════════════════╗
+║     baibot · 小白  控制面板     ║
+╚══════════════════════════════════╝
 
-  [1] 命令行聊天  (terminal chat)
-  [2] WebUI 界面  (浏览器访问)
+  ● WebUI 运行中  (PID: 1234)  http://localhost:7200
 
-请输入数字 (1 或 2):
+  ── 启动 ──
+  [1] 命令行聊天
+  [2] 启动 WebUI
+
+  ── 管理 ──
+  [3] 重启 WebUI
+  [4] 停止 WebUI
+  [5] 查看状态
+  [6] 查看日志
+
+  ── 系统 ──
+  [7] 安装 systemd 开机自启
+  [8] 卸载（删除 venv / 配置）
+  [9] 更新依赖
+
+  [0] 退出
+
+请输入数字:
 ```
 
-- 输入 `1` → 进入终端命令行聊天
-- 输入 `2` → 后台启动 WebUI，打印本地和局域网访问链接
-
-**deploy.sh 命令一览：**
+**直接命令（跳过菜单）：**
 
 | 命令 | 说明 |
 |------|------|
-| `bash deploy.sh start` | 安装依赖 → 选择 CLI 或 WebUI 模式 |
-| `bash deploy.sh cli` | 跳过菜单，直接进入命令行聊天 |
-| `bash deploy.sh stop` | 停止后台 WebUI 服务 |
-| `bash deploy.sh restart` | 停止 + 重新选择模式 |
-| `bash deploy.sh status` | 查看运行状态和访问地址 |
-| `sudo bash deploy.sh install` | 全自动安装 + 注册 systemd 服务（开机自启） |
-| `bash deploy.sh service` | 仅注册 systemd 服务（需 root） |
+| `bash deploy.sh` | 打开交互控制面板 |
+| `bash deploy.sh cli` | 直接进入命令行聊天 |
+| `bash deploy.sh start` | 后台启动 WebUI |
+| `bash deploy.sh stop` | 停止 WebUI |
+| `bash deploy.sh restart` | 重启 WebUI |
+| `bash deploy.sh status` | 查看运行状态 |
+| `bash deploy.sh log` | 查看最近日志 |
+| `bash deploy.sh update` | 更新 Python 依赖 |
+| `sudo bash deploy.sh install` | 注册 systemd 服务（开机自启） |
+| `bash deploy.sh uninstall` | 卸载（删除 venv / 配置 / 缓存） |
 
 **systemd 管理（install 后可用）：**
 
@@ -136,7 +154,7 @@ sudo systemctl status baibot      # 查看状态
 sudo journalctl -u baibot -f      # 实时日志
 ```
 
-> 脚本会自动检测并安装缺失的系统包（`python3-venv` 等），适配 Ubuntu / Debian / CentOS。
+> 脚本自动检测 Python 版本、安装缺失系统包（`python3-venv` 等），适配 Ubuntu / Debian / CentOS。
 
 ### 🍎 macOS 部署
 
