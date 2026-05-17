@@ -372,6 +372,8 @@ class Agent:
                 }
 
                 if self._is_duplicate_obs(tool_name, compressed):
+                    messages.append(tool_message)
+                    self.recent_messages.append(tool_message)
                     continue
 
                 messages.append(tool_message)
