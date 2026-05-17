@@ -1,9 +1,11 @@
 /*
- * baibot Control Panel - Windows GUI (C + Win32)
- * Compile: gcc -mwindows -O2 deploy.c -o deploy.exe -lcomctl32 -lshlwapi
+ * baibot Windows 控制面板 (C + Win32 Unicode)
+ * 编译: gcc -mwindows -O2 -municode deploy.c -o deploy.exe -lcomctl32 -lshlwapi
  */
 
 #define WIN32_LEAN_AND_MEAN
+#define UNICODE
+#define _UNICODE
 #include <windows.h>
 #include <commctrl.h>
 #include <tlhelp32.h>
@@ -16,97 +18,111 @@
 name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
 processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
-#define PORT      7200
-#define IDC_START 101
-#define IDC_STOP  102
-#define IDC_LOG   103
-#define IDC_UNINST 104
-#define IDC_SETUP  105
-#define IDC_URL    106
+#define PORT 7200
+#define IDC_START   101
+#define IDC_STOP    102
+#define IDC_LOG     103
+#define IDC_UNINST  104
+#define IDC_SETUP   105
+#define IDC_COPY    106
+#define IDC_URL     107
 
-static char  g_dir[MAX_PATH];
-static char  g_venv[MAX_PATH];
-static char  g_marker[MAX_PATH];
-static char  g_pythonw[MAX_PATH];
-static char  g_server[MAX_PATH];
-static char  g_log[MAX_PATH];
-static char  g_sys_python[MAX_PATH];
+static WCHAR g_dir[MAX_PATH];
+static WCHAR g_venv[MAX_PATH];
+static WCHAR g_marker[MAX_PATH];
+static WCHAR g_pythonw[MAX_PATH];
+static WCHAR g_python[MAX_PATH];
+static WCHAR g_pip[MAX_PATH];
+static WCHAR g_server[MAX_PATH];
+static WCHAR g_log[MAX_PATH];
+static WCHAR g_sys_python[MAX_PATH];
+static WCHAR g_url_text[128];
 static HWND  g_hwnd;
 static HWND  g_status;
 static HWND  g_url;
 static int   g_has_venv;
 
-/* ── helper ── */
-static int _exists(const char *path) { return GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES; }
+/* ── 辅助 ── */
+static int _exists(const WCHAR *path) { return GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES; }
 
 static void _init_paths(void) {
-    GetModuleFileNameA(NULL, g_dir, MAX_PATH);
-    char *p = strrchr(g_dir, '\\'); if (p) *p = 0;
-    snprintf(g_venv,    MAX_PATH, "%s\\.venv", g_dir);
-    snprintf(g_marker,  MAX_PATH, "%s\\.venv\\.installed", g_dir);
-    snprintf(g_pythonw, MAX_PATH, "%s\\.venv\\Scripts\\pythonw.exe", g_dir);
-    snprintf(g_server,  MAX_PATH, "%s\\server.py", g_dir);
-    snprintf(g_log,     MAX_PATH, "%s\\baibot.log", g_dir);
+    GetModuleFileNameW(NULL, g_dir, MAX_PATH);
+    WCHAR *p = wcsrchr(g_dir, L'\\'); if (p) *p = 0;
+
+    wsprintfW(g_venv,    L"%s\\.venv", g_dir);
+    wsprintfW(g_marker,  L"%s\\.venv\\.installed", g_dir);
+    wsprintfW(g_pythonw, L"%s\\.venv\\Scripts\\pythonw.exe", g_dir);
+    wsprintfW(g_python,  L"%s\\.venv\\Scripts\\python.exe", g_dir);
+    wsprintfW(g_pip,     L"%s\\.venv\\Scripts\\pip.exe", g_dir);
+    wsprintfW(g_server,  L"%s\\server.py", g_dir);
+    wsprintfW(g_log,     L"%s\\baibot.log", g_dir);
+    wsprintfW(g_url_text, L"http://localhost:%d", PORT);
     g_has_venv = _exists(g_marker);
 }
 
-/* ── find system python ── */
-static const char *_find_python(void) {
+/* ── 查找系统 Python ── */
+static const WCHAR *_find_python(void) {
     g_sys_python[0] = 0;
-    const char *home = getenv("USERPROFILE");
-    const char *lapp = getenv("LOCALAPPDATA");
+    const WCHAR *home = _wgetenv(L"USERPROFILE");
+    const WCHAR *lapp = _wgetenv(L"LOCALAPPDATA");
+    WCHAR buf[8][MAX_PATH];
+    int n = 0;
 
-    const char *try[] = {NULL,NULL,NULL,NULL,NULL,NULL,
-        "C:\\Python313\\python.exe","C:\\Python312\\python.exe",NULL};
-    char b1[MAX_PATH], b2[MAX_PATH], b3[MAX_PATH], b4[MAX_PATH], b5[MAX_PATH];
+    if (home) { wsprintfW(buf[n], L"%s\\python-sdk\\python3.13.2\\python.exe", home); n++; }
+    if (lapp) { wsprintfW(buf[n], L"%s\\Programs\\Python\\Python314\\python.exe", lapp); n++; }
+    if (lapp) { wsprintfW(buf[n], L"%s\\Programs\\Python\\Python313\\python.exe", lapp); n++; }
+    if (lapp) { wsprintfW(buf[n], L"%s\\Programs\\Python\\Python312\\python.exe", lapp); n++; }
+    if (lapp) { wsprintfW(buf[n], L"%s\\Programs\\Python\\Python311\\python.exe", lapp); n++; }
+    wcscpy(buf[n], L"C:\\Python313\\python.exe"); n++;
+    wcscpy(buf[n], L"C:\\Python312\\python.exe"); n++;
 
-    if (home) { snprintf(b1,MAX_PATH,"%s\\python-sdk\\python3.13.2\\python.exe",home); try[0]=b1; }
-    if (lapp) { snprintf(b2,MAX_PATH,"%s\\Programs\\Python\\Python314\\python.exe",lapp); try[1]=b2; }
-    if (lapp) { snprintf(b3,MAX_PATH,"%s\\Programs\\Python\\Python313\\python.exe",lapp); try[2]=b3; }
-    if (lapp) { snprintf(b4,MAX_PATH,"%s\\Programs\\Python\\Python312\\python.exe",lapp); try[3]=b4; }
-    if (lapp) { snprintf(b5,MAX_PATH,"%s\\Programs\\Python\\Python311\\python.exe",lapp); try[4]=b5; }
-
-    for (int i = 0; try[i]; i++) {
-        if (_exists(try[i])) { strncpy(g_sys_python, try[i], MAX_PATH-1); return g_sys_python; }
+    for (int i = 0; i < n; i++) {
+        if (_exists(buf[i])) { wcscpy(g_sys_python, buf[i]); return g_sys_python; }
     }
 
-    /* where python */
-    FILE *fp = _popen("where python 2>nul", "r");
+    FILE *fp = _wpopen(L"where python 2>nul", L"r");
     if (fp) {
-        char line[512];
-        if (fgets(line, sizeof(line), fp)) {
-            line[strcspn(line, "\r\n")] = 0;
+        WCHAR line[512];
+        if (fgetws(line, 512, fp)) {
+            line[wcscspn(line, L"\r\n")] = 0;
             _pclose(fp);
-            if (_exists(line)) { strncpy(g_sys_python, line, MAX_PATH-1); return g_sys_python; }
+            if (_exists(line)) { wcscpy(g_sys_python, line); return g_sys_python; }
         } else _pclose(fp);
     }
     return NULL;
 }
 
-/* ── is pythonw.exe running? ── */
+/* ── 检测 WebUI 是否运行 ── */
 static int _is_running(void) {
+    /* 方法1: 查进程名 */
     HANDLE h = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (h == INVALID_HANDLE_VALUE) return 0;
-    PROCESSENTRY32 pe = { sizeof(pe) };
-    int found = 0;
-    if (Process32First(h, &pe)) {
-        do { if (lstrcmpiA(pe.szExeFile, "pythonw.exe") == 0) { found = 1; break; } }
-        while (Process32Next(h, &pe));
+    if (h != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32W pe = { sizeof(pe) };
+        if (Process32FirstW(h, &pe)) {
+            do {
+                if (lstrcmpiW(pe.szExeFile, L"pythonw.exe") == 0 ||
+                    lstrcmpiW(pe.szExeFile, L"python.exe") == 0)
+                {
+                    CloseHandle(h);
+                    return 1;
+                }
+            } while (Process32NextW(h, &pe));
+        }
+        CloseHandle(h);
     }
-    CloseHandle(h);
-    return found;
+    return 0;
 }
 
-/* ── run command hidden, wait ── */
-static int _run_wait(const char *fmt, ...) {
-    char cmd[2048], line[3072];
-    va_list va; va_start(va, fmt); vsnprintf(cmd, sizeof(cmd), fmt, va); va_end(va);
-    snprintf(line, sizeof(line), "cmd /c \"%s\"", cmd);
+/* ── 运行命令隐藏窗口等待 ── */
+static int _run_wait(const WCHAR *fmt, ...) {
+    WCHAR cmd[4096], line[8192];
+    va_list va; va_start(va, fmt); wvnsprintfW(cmd, 4096, fmt, va); va_end(va);
+    wsprintfW(line, L"cmd /c \"%s\"", cmd);
 
-    STARTUPINFOA si = { sizeof(si) };
+    STARTUPINFOW si = { sizeof(si) };
     PROCESS_INFORMATION pi;
     si.dwFlags = STARTF_USESHOWWINDOW; si.wShowWindow = SW_HIDE;
-    if (!CreateProcessA(NULL, line, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
+    if (!CreateProcessW(NULL, line, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
         return -1;
     WaitForSingleObject(pi.hProcess, INFINITE);
     DWORD ec; GetExitCodeProcess(pi.hProcess, &ec);
@@ -114,151 +130,188 @@ static int _run_wait(const char *fmt, ...) {
     return (int)ec;
 }
 
-/* ── start webui in background ── */
+/* ── 启动 WebUI ── */
 static void _start_webui(void) {
-    SetWindowTextA(g_status, "Starting WebUI...");
-    InvalidateRect(g_hwnd, NULL, TRUE);
+    WCHAR cmd[1024];
+    wsprintfW(cmd, L"\"%s\" \"%s\"", g_pythonw, g_server);
 
-    char cmd[1024];
-    snprintf(cmd, sizeof(cmd), "\"%s\" \"%s\"", g_pythonw, g_server);
-    STARTUPINFOA si = { sizeof(si) };
+    STARTUPINFOW si = { sizeof(si) };
     PROCESS_INFORMATION pi;
     si.dwFlags = STARTF_USESHOWWINDOW; si.wShowWindow = SW_HIDE;
-    CreateProcessA(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, g_dir, &si, &pi);
-    if (pi.hProcess) { CloseHandle(pi.hProcess); CloseHandle(pi.hThread); }
-    Sleep(2500);
+    if (CreateProcessW(NULL, cmd, NULL, NULL, FALSE,
+                       CREATE_NO_WINDOW, NULL, g_dir, &si, &pi)) {
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+    Sleep(3000);
 }
 
-/* ── refresh ui ── */
+/* ── 停止 WebUI ── */
+static void _stop_webui(void) {
+    /* 杀掉 pythonw.exe 和 python.exe */
+    HANDLE h = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (h != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32W pe = { sizeof(pe) };
+        if (Process32FirstW(h, &pe)) {
+            do {
+                if (lstrcmpiW(pe.szExeFile, L"pythonw.exe") == 0 ||
+                    lstrcmpiW(pe.szExeFile, L"python.exe") == 0)
+                {
+                    HANDLE ph = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
+                    if (ph) { TerminateProcess(ph, 0); CloseHandle(ph); }
+                }
+            } while (Process32NextW(h, &pe));
+        }
+        CloseHandle(h);
+    }
+    Sleep(800);
+}
+
+/* ── 刷新界面 ── */
 static void _refresh(void) {
     int on = _is_running();
-    SetWindowTextA(g_status, on ? "[ONLINE]  baibot WebUI" : "[OFFLINE]");
-    SetWindowTextA(g_url, on ? "http://localhost:7200" : "Not running");
+
+    SetWindowTextW(g_status, on ?
+        L"[运行中]  已启动" :
+        L"[未启动]  点击下方按钮启动服务");
+
+    WCHAR url[256];
+    if (on) {
+        wsprintfW(url, L"<a href=\"http://localhost:%d\">http://localhost:%d</a>  ", PORT, PORT);
+    } else {
+        wcscpy(url, L"服务未启动");
+    }
+    SetWindowTextW(g_url, url);
 
     EnableWindow(GetDlgItem(g_hwnd, IDC_START), !on && g_has_venv);
     EnableWindow(GetDlgItem(g_hwnd, IDC_STOP), on);
     EnableWindow(GetDlgItem(g_hwnd, IDC_SETUP), !g_has_venv);
-
-    /* flash window if running */
-    ShowWindow(g_hwnd, SW_SHOW);
+    EnableWindow(GetDlgItem(g_hwnd, IDC_COPY), on);
 }
 
-/* ── do setup ── */
+/* ── 安装 ── */
 static int _do_setup(void) {
-    const char *py = _find_python();
+    const WCHAR *py = _find_python();
     if (!py) {
-        MessageBoxA(g_hwnd,
-            "Python 3.10+ not found!\n\n"
-            "Please install from: https://www.python.org/downloads/\n"
-            "Check 'Add Python to PATH' during install.",
-            "baibot - Error", MB_OK | MB_ICONERROR);
+        MessageBoxW(g_hwnd,
+            L"未找到 Python 3.10+ ！\n\n"
+            L"请从 https://www.python.org/downloads/ 下载安装\n"
+            L"安装时请勾选 \"Add Python to PATH\"",
+            L"baibot - 错误", MB_OK | MB_ICONERROR);
         return 0;
     }
 
-    /* step 1: venv */
-    SetWindowTextA(g_status, "Creating virtual environment...");
-    InvalidateRect(g_hwnd, NULL, TRUE);
-    if (_run_wait("\"%s\" -m venv \"%s\"", py, g_venv) != 0) {
-        MessageBoxA(g_hwnd, "Virtual environment creation failed.", "baibot", MB_OK | MB_ICONERROR);
+    WCHAR msg[256];
+    wsprintfW(msg, L"检测到 Python: %s\n开始安装...", py);
+    SetWindowTextW(g_status, msg);
+
+    /* 创建虚拟环境 */
+    if (_run_wait(L"\"%s\" -m venv \"%s\"", py, g_venv) != 0) {
+        MessageBoxW(g_hwnd, L"虚拟环境创建失败", L"baibot", MB_OK | MB_ICONERROR);
         return 0;
     }
 
-    /* step 2: pip install */
-    SetWindowTextA(g_status, "Installing dependencies (may take a minute)...");
-    InvalidateRect(g_hwnd, NULL, TRUE);
-
-    char pp[MAX_PATH];
-    snprintf(pp, MAX_PATH, "%s\\Scripts\\pip.exe", g_venv);
-    if (_run_wait("\"%s\" install -q -r \"%s\\requirements.txt\"", pp, g_dir) != 0) {
-        MessageBoxA(g_hwnd, "Dependency install failed.\nCheck network or proxy settings.", "baibot", MB_OK | MB_ICONERROR);
+    /* 安装依赖 */
+    SetWindowTextW(g_status, L"正在安装依赖（可能需要几分钟）...");
+    if (_run_wait(L"\"%s\" install -q -r \"%s\\requirements.txt\"", g_pip, g_dir) != 0) {
+        MessageBoxW(g_hwnd, L"依赖安装失败，请检查网络或代理设置", L"baibot", MB_OK | MB_ICONERROR);
         return 0;
     }
 
-    /* mark */
-    HANDLE hf = CreateFileA(g_marker, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    HANDLE hf = CreateFileW(g_marker, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hf != INVALID_HANDLE_VALUE) CloseHandle(hf);
 
     g_has_venv = 1;
     return 1;
 }
 
-/* ── setup + start thread ── */
+/* ── 后台线程 ── */
 static DWORD WINAPI _setup_and_start(LPVOID p) {
     (void)p;
     if (_do_setup()) {
-        SetWindowTextA(g_status, "Starting WebUI...");
-        InvalidateRect(g_hwnd, NULL, TRUE);
+        SetWindowTextW(g_status, L"正在启动服务...");
         _start_webui();
     }
     _refresh();
     return 0;
 }
 
-/* ── start thread ── */
 static DWORD WINAPI _start_thread(LPVOID p) {
     (void)p;
+    SetWindowTextW(g_status, L"正在启动...");
     _start_webui();
     _refresh();
     return 0;
 }
 
-/* ── stop thread ── */
 static DWORD WINAPI _stop_thread(LPVOID p) {
     (void)p;
-    system("taskkill /IM pythonw.exe /F >nul 2>&1");
-    Sleep(600);
+    _stop_webui();
     _refresh();
     return 0;
 }
 
-/* ── wndproc ── */
+/* ── 窗口过程 ── */
 static LRESULT CALLBACK _wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_CREATE: {
         g_hwnd = hwnd;
 
-        /* title */
-        CreateWindowA("STATIC", "baibot Control Panel",
-            WS_VISIBLE | WS_CHILD | SS_CENTER,
-            15, 15, 320, 22, hwnd, NULL, NULL, NULL);
+        HFONT hTitle = CreateFontW(18,0,0,0,FW_BOLD,0,0,0,
+            DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,
+            DEFAULT_QUALITY,DEFAULT_PITCH,L"Microsoft YaHei UI");
+        HFONT hNormal = CreateFontW(14,0,0,0,FW_NORMAL,0,0,0,
+            DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,
+            DEFAULT_QUALITY,DEFAULT_PITCH,L"Microsoft YaHei UI");
 
-        /* status */
-        g_status = CreateWindowA("STATIC", "[OFFLINE]",
-            WS_VISIBLE | WS_CHILD | SS_CENTER,
-            15, 42, 320, 20, hwnd, NULL, NULL, NULL);
+        /* 标题 */
+        HWND ctl = CreateWindowW(L"STATIC", L"baibot · 小白 控制面板",
+            WS_VISIBLE|WS_CHILD|SS_CENTER,
+            10,12,340,28, hwnd, NULL, NULL, NULL);
+        SendMessageW(ctl, WM_SETFONT, (WPARAM)hTitle, TRUE);
 
-        /* url box */
-        g_url = CreateWindowA("EDIT", "",
-            WS_VISIBLE | WS_CHILD | ES_READONLY | ES_CENTER | WS_BORDER,
-            50, 72, 250, 24, hwnd, (HMENU)IDC_URL, NULL, NULL);
-        {
-            HFONT f = CreateFontA(15,0,0,0,FW_SEMIBOLD,0,0,0,DEFAULT_CHARSET,
-                OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,DEFAULT_QUALITY,
-                FIXED_PITCH|FF_MODERN,"Consolas");
-            SendMessageA(g_url, WM_SETFONT, (WPARAM)f, TRUE);
-        }
+        /* 状态 */
+        g_status = CreateWindowW(L"STATIC", L"[未启动]",
+            WS_VISIBLE|WS_CHILD|SS_CENTER,
+            10,48,340,22, hwnd, NULL, NULL, NULL);
+        SendMessageW(g_status, WM_SETFONT, (WPARAM)hNormal, TRUE);
 
-        /* buttons row 1 */
-        CreateWindowA("BUTTON", "Start WebUI",
-            WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-            25, 112, 105, 34, hwnd, (HMENU)IDC_START, NULL, NULL);
+        /* URL - 使用 SysLink 控件支持点击 */
+        g_url = CreateWindowW(L"SysLink", L"<a>http://localhost:7200</a>",
+            WS_VISIBLE|WS_CHILD|SS_CENTER,
+            30,82,300,26, hwnd, (HMENU)IDC_URL, NULL, NULL);
+        SendMessageW(g_url, WM_SETFONT, (WPARAM)hNormal, TRUE);
 
-        CreateWindowA("BUTTON", "Stop WebUI",
-            WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-            135, 112, 105, 34, hwnd, (HMENU)IDC_STOP, NULL, NULL);
+        /* 按钮行1 */
+        int btw = 100, bth = 36, gap = 8;
+        int x = (360 - (btw*3 + gap*2)) / 2;
 
-        CreateWindowA("BUTTON", "View Log",
-            WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-            245, 112, 105, 34, hwnd, (HMENU)IDC_LOG, NULL, NULL);
+        CreateWindowW(L"BUTTON", L"启动 WebUI",
+            WS_VISIBLE|WS_CHILD|BS_PUSHBUTTON,
+            x, 120, btw, bth, hwnd, (HMENU)IDC_START, NULL, NULL);
 
-        /* setup / uninstall row */
-        CreateWindowA("BUTTON", "Setup (install)",
-            WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-            25, 155, 130, 30, hwnd, (HMENU)IDC_SETUP, NULL, NULL);
+        CreateWindowW(L"BUTTON", L"停止 WebUI",
+            WS_VISIBLE|WS_CHILD|BS_PUSHBUTTON,
+            x+btw+gap, 120, btw, bth, hwnd, (HMENU)IDC_STOP, NULL, NULL);
 
-        CreateWindowA("BUTTON", "Uninstall",
-            WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-            195, 155, 130, 30, hwnd, (HMENU)IDC_UNINST, NULL, NULL);
+        CreateWindowW(L"BUTTON", L"复制地址",
+            WS_VISIBLE|WS_CHILD|BS_PUSHBUTTON,
+            x+(btw+gap)*2, 120, btw, bth, hwnd, (HMENU)IDC_COPY, NULL, NULL);
+
+        /* 按钮行2 */
+        int btw2 = 110, x2 = (360 - (btw2*3 + gap*2)) / 2;
+
+        CreateWindowW(L"BUTTON", L"一键安装",
+            WS_VISIBLE|WS_CHILD|BS_PUSHBUTTON,
+            x2, 168, btw2, bth-6, hwnd, (HMENU)IDC_SETUP, NULL, NULL);
+
+        CreateWindowW(L"BUTTON", L"查看日志",
+            WS_VISIBLE|WS_CHILD|BS_PUSHBUTTON,
+            x2+btw2+gap, 168, btw2, bth-6, hwnd, (HMENU)IDC_LOG, NULL, NULL);
+
+        CreateWindowW(L"BUTTON", L"卸载",
+            WS_VISIBLE|WS_CHILD|BS_PUSHBUTTON,
+            x2+(btw2+gap)*2, 168, btw2, bth-6, hwnd, (HMENU)IDC_UNINST, NULL, NULL);
 
         _refresh();
         return 0;
@@ -267,46 +320,71 @@ static LRESULT CALLBACK _wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_COMMAND: {
         int id = LOWORD(wp);
         if (id == IDC_START) {
-            SetWindowTextA(g_status, "Launching...");
-            InvalidateRect(hwnd, NULL, TRUE);
+            EnableWindow(GetDlgItem(hwnd, IDC_START), FALSE);
+            SetWindowTextW(g_status, L"正在启动...");
             CreateThread(NULL, 0, _start_thread, NULL, 0, NULL);
         } else if (id == IDC_STOP) {
+            EnableWindow(GetDlgItem(hwnd, IDC_STOP), FALSE);
+            SetWindowTextW(g_status, L"正在停止...");
             CreateThread(NULL, 0, _stop_thread, NULL, 0, NULL);
+        } else if (id == IDC_COPY) {
+            if (OpenClipboard(hwnd)) {
+                EmptyClipboard();
+                int len = (lstrlenW(g_url_text) + 1) * sizeof(WCHAR);
+                HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, len);
+                if (hMem) {
+                    memcpy(GlobalLock(hMem), g_url_text, len);
+                    GlobalUnlock(hMem);
+                    SetClipboardData(CF_UNICODETEXT, hMem);
+                }
+                CloseClipboard();
+            }
+            MessageBoxW(hwnd, L"地址已复制到剪贴板！", L"baibot", MB_OK | MB_ICONINFORMATION);
         } else if (id == IDC_SETUP) {
-            SetWindowTextA(g_status, "Setting up...");
-            InvalidateRect(hwnd, NULL, TRUE);
             EnableWindow(GetDlgItem(hwnd, IDC_SETUP), FALSE);
+            SetWindowTextW(g_status, L"正在检测环境...");
             CreateThread(NULL, 0, _setup_and_start, NULL, 0, NULL);
         } else if (id == IDC_LOG) {
             if (_exists(g_log))
-                ShellExecuteA(hwnd, "open", "notepad.exe", g_log, NULL, SW_SHOW);
+                ShellExecuteW(hwnd, L"open", L"notepad.exe", g_log, NULL, SW_SHOW);
             else
-                MessageBoxA(hwnd, "No log file yet.", "baibot", MB_OK | MB_ICONINFORMATION);
+                MessageBoxW(hwnd, L"暂无日志文件", L"baibot", MB_OK | MB_ICONINFORMATION);
         } else if (id == IDC_UNINST) {
-            if (MessageBoxA(hwnd,
-                "Remove virtual environment, logs, and config?\n\n"
-                "Source code will NOT be deleted.",
-                "baibot - Uninstall", MB_YESNO | MB_ICONWARNING) == IDYES) {
+            if (MessageBoxW(hwnd,
+                L"确定要卸载吗？\n\n"
+                L"将删除虚拟环境、日志和持久化配置。\n"
+                L"源代码不会被删除。",
+                L"baibot - 卸载", MB_YESNO | MB_ICONWARNING) == IDYES) {
 
-                if (_is_running()) system("taskkill /IM pythonw.exe /F >nul 2>&1");
+                _stop_webui();
 
-                char cmd[MAX_PATH+32];
-                snprintf(cmd, sizeof(cmd), "rmdir /s /q \"%s\"", g_venv);
-                system(cmd);
-                DeleteFileA(g_log);
-                snprintf(cmd, sizeof(cmd), "%s\\config.json", g_dir); DeleteFileA(cmd);
-                snprintf(cmd, sizeof(cmd), "%s\\plugin_config.json", g_dir); DeleteFileA(cmd);
-                snprintf(cmd, sizeof(cmd), "%s\\app_config.json", g_dir); DeleteFileA(cmd);
+                WCHAR cmd[MAX_PATH+32];
+                wsprintfW(cmd, L"rmdir /s /q \"%s\"", g_venv);
+                _wsystem(cmd);
+                DeleteFileW(g_log);
+                wsprintfW(cmd, L"%s\\config.json", g_dir); DeleteFileW(cmd);
+                wsprintfW(cmd, L"%s\\plugin_config.json", g_dir); DeleteFileW(cmd);
+                wsprintfW(cmd, L"%s\\app_config.json", g_dir); DeleteFileW(cmd);
 
                 g_has_venv = 0;
                 _refresh();
-                MessageBoxA(hwnd,
-                    "Uninstall complete.\nSource code preserved.\n"
-                    "Click 'Setup' to reinstall.",
-                    "baibot", MB_OK | MB_ICONINFORMATION);
+                MessageBoxW(hwnd,
+                    L"卸载完成！\n\n源代码已保留，点击 [一键安装] 即可重新部署。",
+                    L"baibot", MB_OK | MB_ICONINFORMATION);
             }
         }
         return 0;
+    }
+
+    case WM_NOTIFY: {
+        NMHDR *nm = (NMHDR*)lp;
+        if (nm->code == NM_CLICK || nm->code == NM_RETURN) {
+            if (nm->idFrom == IDC_URL) {
+                ShellExecuteW(hwnd, L"open", g_url_text, NULL, NULL, SW_SHOW);
+                return 0;
+            }
+        }
+        break;
     }
 
     case WM_CTLCOLORSTATIC: {
@@ -320,29 +398,29 @@ static LRESULT CALLBACK _wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         PostQuitMessage(0);
         return 0;
     }
-    return DefWindowProcA(hwnd, msg, wp, lp);
+    return DefWindowProcW(hwnd, msg, wp, lp);
 }
 
 /* ── WinMain ── */
-int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmd, int nShow) {
+int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmd, int nShow) {
     (void)hPrev; (void)cmd;
 
     _init_paths();
 
-    INITCOMMONCONTROLSEX icc = { sizeof(icc), ICC_STANDARD_CLASSES };
+    INITCOMMONCONTROLSEX icc = { sizeof(icc), ICC_STANDARD_CLASSES | ICC_LINK_CLASS };
     InitCommonControlsEx(&icc);
 
-    WNDCLASSA wc = {0};
+    WNDCLASSW wc = {0};
     wc.lpfnWndProc   = _wndproc;
     wc.hInstance     = hInst;
-    wc.hCursor       = LoadCursorA(NULL, IDC_ARROW);
+    wc.hCursor       = LoadCursorW(NULL, IDC_ARROW);
     wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-    wc.lpszClassName = "baibotPanel";
-    RegisterClassA(&wc);
+    wc.lpszClassName = L"baibotPanel";
+    RegisterClassW(&wc);
 
-    HWND hwnd = CreateWindowA("baibotPanel", "baibot Control Panel",
+    HWND hwnd = CreateWindowW(L"baibotPanel", L"baibot · 小白",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-        CW_USEDEFAULT, CW_USEDEFAULT, 370, 240,
+        CW_USEDEFAULT, CW_USEDEFAULT, 380, 250,
         NULL, NULL, hInst, NULL);
 
     RECT r; GetWindowRect(hwnd, &r);
@@ -356,9 +434,9 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmd, int nShow) {
     UpdateWindow(hwnd);
 
     MSG msg;
-    while (GetMessageA(&msg, NULL, 0, 0)) {
+    while (GetMessageW(&msg, NULL, 0, 0)) {
         TranslateMessage(&msg);
-        DispatchMessageA(&msg);
+        DispatchMessageW(&msg);
     }
     return (int)msg.wParam;
 }

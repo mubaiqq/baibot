@@ -85,7 +85,7 @@ deploy.exe
 
 > `deploy.exe` 仅 82KB，纯 C 编写，无任何运行时依赖。
 >
-> 从源码编译：`gcc -mwindows -O2 deploy.c -o deploy.exe -lcomctl32 -lcomdlg32 -lshlwapi`
+> 从源码编译：`gcc -mwindows -O2 -municode deploy.c -o deploy.exe -lcomctl32 -lshlwapi`
 
 ### 🐧 Linux 一键部署（推荐）
 ```bash
