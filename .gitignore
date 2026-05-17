@@ -41,3 +41,9 @@ app_config.json
 
 # Scripts runtime directory
 scripts/*.py
+
+# PyInstaller output
+deploy.exe
+dist/
+build/
+*.spec

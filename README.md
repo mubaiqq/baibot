@@ -68,15 +68,15 @@
 git clone https://github.com/mubaiqq/baibot.git
 cd agent
 
-# 双击运行 deploy.bat，或命令行运行
+# 双击 deploy.bat 或命令行运行
 deploy.bat
 ```
 
-启动后显示**交互式控制面板**（与 Linux 版一致），自动检测 Python 环境、创建 venv、安装依赖。
+启动后显示**交互式控制面板**，自动检测 Python、创建 venv、安装依赖。
 
 | 命令 | 说明 |
 |------|------|
-| `deploy.bat` | 打开交互控制面板 |
+| `deploy.bat` | 打开交互控制面板（`python deploy.py`） |
 | `deploy.bat cli` | 直接进入命令行聊天 |
 | `deploy.bat start` | 后台启动 WebUI |
 | `deploy.bat stop` | 停止 WebUI |
@@ -85,6 +85,8 @@ deploy.bat
 | `deploy.bat log` | 查看日志 |
 | `deploy.bat update` | 更新 Python 依赖 |
 | `deploy.bat uninstall` | 卸载（删除 venv / 配置 / 缓存） |
+
+> **打包为 .exe**：如需不依赖 Python 的独立可执行文件，运行 `pip install pyinstaller && pyinstaller --onefile --console --name deploy deploy.py`，生成的 `dist/deploy.exe`（约 8MB）可独立运行。
 
 ### 🐧 Linux 一键部署（推荐）
 
