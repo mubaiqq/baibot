@@ -34,9 +34,6 @@ class Agent:
     MAX_CONTEXT_MESSAGES = 6
     MAX_TOOL_CONTENT = 1500
 
-    # Tool call limits
-    MAX_TOTAL_TOOL_CALLS = 8
-
     def __init__(self):
 
         # Working Memory
@@ -292,12 +289,12 @@ class Agent:
         return messages
 
     def _llm_loop(self, user_input: str, messages: list) -> str:
-        """Multi-step LLM loop: AI can call tools repeatedly, up to MAX_TOTAL_TOOL_CALLS times."""
+        """Multi-step LLM loop: AI can call tools repeatedly, up to max_steps times."""
         total_tool_calls = 0
 
         for step in range(CONFIG["max_steps"]):
 
-            if total_tool_calls >= self.MAX_TOTAL_TOOL_CALLS:
+            if total_tool_calls >= CONFIG["max_steps"]:
                 self._emit("process", "⏹ 工具调用已达上限，生成最终回复")
                 return self._finalize()
 
@@ -337,7 +334,7 @@ class Agent:
 
                 total_tool_calls += 1
 
-                if total_tool_calls > self.MAX_TOTAL_TOOL_CALLS:
+                if total_tool_calls > CONFIG["max_steps"]:
                     self._emit("process", "⏹ 工具调用已达上限，生成最终回复")
                     return self._finalize()
 
