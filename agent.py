@@ -234,6 +234,9 @@ class Agent:
                 "content": message.content,
                 "tool_calls": message.tool_calls,
             }
+            rc = getattr(message, "reasoning_content", None)
+            if rc:
+                assistant_message["reasoning_content"] = rc
 
             if not message.tool_calls:
                 final_reply = message.content or ""
