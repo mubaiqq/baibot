@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+*.pem
+*.key
+
+# Data
+memories/*.json
+
+# Dependencies marker
+.installed
+
+# Trae
+.trae/
+
+# Runtime config (contains API keys, generated on first run)
+config.json
+plugin_config.json
+app_config.json
+
+# Scripts runtime directory
+scripts/*.py

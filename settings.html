@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<title>设置 · baibot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --radius:14px;--radius-sm:10px;--radius-xs:6px;
+  --font:'Outfit',"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:'JetBrains Mono',"Cascadia Code","Consolas",monospace;
+  --ease:cubic-bezier(.22,1,.36,1);--t:0.3s var(--ease);--t-fast:0.15s ease;
+}
+
+[data-theme="light"]{
+  --bg:#f6f6f4;--panel:#fff;--border:#e8e6e2;--border-sub:#f0eeeb;
+  --text:#111;--text2:#555;--text3:#999;
+  --accent:#111;--accent-h:#333;--accent-s:rgba(17,17,17,.05);
+  --log-bg:#f9f8f6;--log-t:#888;
+  --sh-xs:0 1px 2px rgba(0,0,0,.04);--sh-sm:0 2px 8px rgba(0,0,0,.04);--sh-md:0 4px 20px rgba(0,0,0,.06);
+  --ok:#22c55e;--warn:#eab308;--err:#ef4444;
+  --glow:0 0 0 3px rgba(17,17,17,.07);
+}
+
+[data-theme="dark"]{
+  --bg:#0a0a0a;--panel:#141414;--border:#222;--border-sub:#1a1a1a;
+  --text:#eee;--text2:#999;--text3:#555;
+  --accent:#eee;--accent-h:#bbb;--accent-s:rgba(255,255,255,.05);
+  --log-bg:rgba(255,255,255,.03);--log-t:#666;
+  --sh-xs:none;--sh-sm:none;--sh-md:0 4px 20px rgba(0,0,0,.4);
+  --ok:#4ade80;--warn:#facc15;--err:#f87171;
+  --glow:0 0 0 3px rgba(255,255,255,.07);
+}
+
+html{height:100%}
+body{min-height:100%;font-family:var(--font);background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased}
+
+body::before{content:'';position:fixed;inset:0;opacity:.016;pointer-events:none;z-index:9999;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+
+#app{max-width:720px;margin:0 auto;padding:0 20px 40px}
+
+/* Header */
+#header{display:flex;align-items:center;justify-content:space-between;padding:18px 0;margin-bottom:24px;border-bottom:1px solid var(--border-sub)}
+.hdr-left{display:flex;align-items:center;gap:12px}
+.back-btn{width:34px;height:34px;border-radius:50%;border:0;
+  background:var(--accent-s);color:var(--text2);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;text-decoration:none;
+  transition:all var(--t-fast)}
+.back-btn:hover{color:var(--text)}
+.back-btn:active{transform:scale(.9)}
+.logo{display:flex;align-items:center;gap:9px;user-select:none}
+.logo .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex-shrink:0}
+.logo .brand{font-weight:800;font-size:14px;letter-spacing:2px;text-transform:uppercase}
+.logo .sub{font-weight:400;font-size:12px;color:var(--text3)}
+.page-title{font-weight:600;font-size:15px;color:var(--text2)}
+
+.hdr-act button{
+  background:var(--accent-s);color:var(--text2);border:0;padding:6px 14px;
+  border-radius:100px;cursor:pointer;font-size:12px;font-weight:500;
+  font-family:var(--font);transition:all var(--t-fast)}
+.hdr-act button:hover{background:var(--accent-s);color:var(--text)}
+
+/* Tabs */
+#tabs{display:flex;gap:2px;margin-bottom:28px;background:var(--accent-s);border-radius:var(--radius-sm);padding:3px}
+.tab-btn{flex:1;padding:10px 16px;border:0;border-radius:var(--radius-xs);background:transparent;
+  color:var(--text3);font-size:13.5px;font-weight:500;font-family:var(--font);
+  cursor:pointer;transition:all var(--t-fast)}
+.tab-btn.active{background:var(--panel);color:var(--text);box-shadow:var(--sh-xs)}
+.tab-btn:hover:not(.active){color:var(--text2)}
+
+/* Content */
+.tab-content{display:none;animation:fadeIn .3s var(--ease)}
+.tab-content.active{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* Card */
+.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin-bottom:16px}
+.card-title{font-size:14px;font-weight:600;margin-bottom:18px;display:flex;align-items:center;gap:8px;color:var(--text)}
+.card-desc{font-size:13px;color:var(--text3);margin-bottom:16px;line-height:1.6}
+
+/* Form */
+.form-group{margin-bottom:18px}
+.form-group:last-child{margin-bottom:0}
+.form-label{display:block;font-size:12.5px;font-weight:500;color:var(--text2);margin-bottom:6px}
+.form-input,.form-select,.form-textarea{width:100%;background:var(--bg);border:1px solid var(--border);
+  border-radius:var(--radius-xs);color:var(--text);padding:10px 12px;
+  font-size:13.5px;font-family:var(--font);outline:none;
+  transition:border-color var(--t-fast),box-shadow var(--t-fast)}
+.form-input:focus,.form-select:focus,.form-textarea:focus{border-color:var(--accent);box-shadow:var(--glow)}
+.form-select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 12px center;padding-right:36px;cursor:pointer}
+
+.form-textarea{font-family:var(--mono);font-size:12px;line-height:1.6;resize:vertical;min-height:300px}
+.form-hint{font-size:11.5px;color:var(--text3);margin-top:5px}
+.form-row{display:flex;gap:10px;align-items:end}
+.form-row .form-group{flex:1}
+.form-inline{display:flex;gap:10px}
+.form-inline .form-group{flex:1}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border:0;border-radius:100px;
+  font-size:13px;font-weight:500;font-family:var(--font);cursor:pointer;transition:all var(--t-fast);
+  position:relative}
+.btn-primary{background:var(--accent);color:var(--bg)}
+.btn-primary:hover{background:var(--accent-h);transform:translateY(-1px);box-shadow:var(--sh-sm)}
+.btn-primary:active{transform:translateY(0)}
+.btn-secondary{background:var(--accent-s);color:var(--text)}
+.btn-secondary:hover{background:var(--border-sub)}
+.btn-danger{background:transparent;color:var(--err)}
+.btn-danger:hover{background:rgba(239,68,68,.1)}
+.btn:disabled{opacity:.5;pointer-events:none;transform:none!important}
+
+.btn .spinner{display:none;width:14px;height:14px;border:2px solid transparent;border-top-color:currentColor;
+  border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.btn.loading .spinner{display:inline-block}
+.btn.loading .btn-text{display:none}
+
+/* Toast */
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:999;
+  background:var(--accent);color:var(--bg);padding:10px 20px;border-radius:100px;
+  font-size:13px;font-weight:500;font-family:var(--font);
+  opacity:0;pointer-events:none;transition:opacity .25s ease,transform .25s var(--ease);
+  box-shadow:var(--sh-md);white-space:nowrap}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
+#toast.error{background:var(--err);color:#fff}
+
+/* Readonly row */
+.info-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border-sub)}
+.info-row:last-child{border-bottom:none}
+.info-label{font-size:12.5px;color:var(--text2)}
+.info-val{font-size:13px;color:var(--text);font-family:var(--mono);max-width:55%;text-align:right;word-break:break-all}
+
+/* Plugin Cards */
+.plugins-scroll{display:flex;flex-direction:column;gap:10px}
+.plugin-card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+  padding:16px 18px;transition:all var(--t-fast);display:flex;align-items:center;gap:12px}
+.plugin-card:hover{border-color:var(--accent);box-shadow:var(--sh-sm)}
+.plugin-card .pc-icon{width:36px;height:36px;border-radius:var(--radius-xs);background:var(--accent-s);
+  display:flex;align-items:center;justify-content:center;color:var(--text2);flex-shrink:0}
+.plugin-card .pc-info{flex:1;min-width:0}
+.plugin-card .pc-name{font-size:14px;font-weight:600;color:var(--text)}
+.plugin-card .pc-desc{font-size:12px;color:var(--text3);line-height:1.4;margin-top:2px}
+.plugin-card .pc-settings{background:var(--accent-s);color:var(--text2);border:0;padding:6px 14px;border-radius:100px;
+  cursor:pointer;font-size:11.5px;font-weight:500;font-family:var(--font);transition:all var(--t-fast);flex-shrink:0}
+.plugin-card .pc-settings:hover{background:var(--accent);color:var(--bg)}
+
+/* Modal */
+.modal-overlay{position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.4);
+  opacity:0;pointer-events:none;transition:opacity .25s ease}
+.modal-overlay.open{opacity:1;pointer-events:auto}
+.modal-box{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.92);
+  background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);z-index:501;
+  width:380px;max-width:90vw;max-height:80vh;overflow-y:auto;padding:24px;
+  opacity:0;pointer-events:none;transition:all .25s var(--ease)}
+.modal-box.open{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1)}
+.modal-title{font-size:16px;font-weight:700;letter-spacing:-.3px;margin-bottom:20px;display:flex;align-items:center;gap:8px}
+.modal-close{position:absolute;top:12px;right:12px;width:28px;height:28px;border-radius:50%;border:0;
+  background:var(--accent-s);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:all var(--t-fast)}
+.modal-close:hover{color:var(--text)}
+.modal-field{margin-bottom:16px}
+.modal-field:last-child{margin-bottom:0}
+.modal-field .mf-label{display:block;font-size:12.5px;font-weight:500;color:var(--text2);margin-bottom:6px}
+.modal-field .mf-input{width:100%;background:var(--bg);border:1px solid var(--border);
+  border-radius:var(--radius-xs);color:var(--text);padding:9px 12px;font-size:13px;font-family:var(--mono);outline:none;
+  transition:border-color var(--t-fast)}
+.modal-field .mf-input:focus{border-color:var(--accent);box-shadow:var(--glow)}
+.modal-field .mf-desc{font-size:11.5px;color:var(--text3);margin-top:4px}
+.modal-actions{display:flex;gap:8px;margin-top:20px;justify-content:flex-end}
+
+/* Responsive */
+@media(max-width:640px){
+  #app{padding:0 12px 32px}
+  #header{padding:14px 0;margin-bottom:16px}
+  .card{padding:18px}
+  #tabs{margin-bottom:20px}
+  .tab-btn{font-size:12px;padding:8px 10px}
+  .modal-box{padding:18px}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="header">
+    <div class="hdr-left">
+      <a href="/" class="back-btn" title="返回聊天">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+      </a>
+      <div class="logo">
+        <div class="dot"></div>
+        <span class="brand">BAIBOT</span>
+        <span class="sub">· 小白</span>
+      </div>
+    </div>
+    <span class="page-title">设置</span>
+    <div class="hdr-act">
+      <button id="theme-btn" title="切换主题"></button>
+    </div>
+  </header>
+
+  <nav id="tabs">
+    <button class="tab-btn active" data-tab="info">基本信息</button>
+    <button class="tab-btn" data-tab="model">大模型设置</button>
+    <button class="tab-btn" data-tab="plugins">插件管理</button>
+  </nav>
+
+  <!-- ─── 基本信息 ─── -->
+  <div class="tab-content active" id="tab-info">
+    <div class="card">
+      <div class="card-title">系统信息</div>
+      <div class="form-group">
+        <label class="form-label">Agent 名称</label>
+        <input class="form-input" id="info-agent" placeholder="小白">
+      </div>
+      <div class="form-group">
+        <label class="form-label">当前模型 <span style="font-weight:400;color:var(--text3)">（仅本次会话生效）</span></label>
+        <select class="form-select" id="info-model-select"></select>
+      </div>
+      <div class="form-inline">
+        <div class="form-group">
+          <label class="form-label">最大步数</label>
+          <input class="form-input" id="info-steps" type="number" min="1" max="50" placeholder="10">
+        </div>
+        <div class="form-group">
+          <label class="form-label">温度</label>
+          <input class="form-input" id="info-temp" type="number" min="0" max="2" step="0.1" placeholder="0.2">
+        </div>
+      </div>
+      <div style="margin-top:16px">
+        <button class="btn btn-primary" id="btn-save-info" onclick="saveInfoConfig()"><span class="btn-text">保存</span><span class="spinner"></span></button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">当前会话</div>
+      <div class="info-row"><span class="info-label">会话 ID</span><span class="info-val" id="info-session">-</span></div>
+      <div class="info-row"><span class="info-label">消息数</span><span class="info-val" id="info-msg-count">-</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">会话管理</div>
+      <div class="card-desc">清空本地所有对话记录，此操作不可撤销。</div>
+      <button class="btn btn-danger" onclick="clearAllConversations()">清空所有会话</button>
+    </div>
+  </div>
+
+  <!-- ─── 大模型设置 ─── -->
+  <div class="tab-content" id="tab-model">
+    <div class="card">
+      <div class="card-title">默认模型 <span style="font-weight:400;font-size:12px;color:var(--text3)">（新会话 &amp; 重启后默认使用）</span></div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">选择默认模型</label>
+          <select class="form-select" id="default-model-select"></select>
+        </div>
+        <div class="form-group">
+          <button class="btn btn-primary" id="btn-save-default-model" onclick="saveDefaultModel()"><span class="btn-text">设为默认</span><span class="spinner"></span></button>
+        </div>
+      </div>
+      <div class="form-hint" id="default-model-status"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">提供商配置 (JSON)</div>
+      <div class="card-desc">直接编辑 API 提供商的完整配置，包括默认模型。修改后点击保存立即生效。</div>
+      <textarea class="form-textarea" id="provider-json" spellcheck="false"></textarea>
+      <div style="margin-top:12px;display:flex;gap:8px">
+        <button class="btn btn-primary" id="btn-save-providers" onclick="saveProviderConfig()"><span class="btn-text">保存配置</span><span class="spinner"></span></button>
+        <button class="btn btn-secondary" onclick="loadProviderConfig()"><span class="btn-text">重新加载</span></button>
+      </div>
+      <div class="form-hint" id="provider-status"></div>
+    </div>
+  </div>
+
+  <!-- ─── 插件管理 ─── -->
+  <div class="tab-content" id="tab-plugins">
+    <div class="card">
+      <div class="card-title">🗂 工具插件</div>
+      <div class="card-desc">左右滑动查看全部插件。有设置按钮的插件可点击配置。</div>
+      <div class="plugins-scroll" id="plugins-scroll"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal()"></div>
+<div class="modal-box" id="modal-box">
+  <button class="modal-close" onclick="closeModal()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+  <div class="modal-title" id="modal-title"></div>
+  <div id="modal-fields"></div>
+  <div class="modal-actions">
+    <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+    <button class="btn btn-primary" id="modal-save" onclick="savePluginConfig()"><span class="btn-text">保存</span><span class="spinner"></span></button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ── Theme ── */
+(function(){var t=localStorage.getItem("baibot-theme")||"light";document.documentElement.setAttribute("data-theme",t);syncTheme()})();
+function syncTheme(){var t=document.documentElement.getAttribute("data-theme");var b=document.getElementById("theme-btn");if(b)b.innerHTML=t==="dark"?ic_sun():ic_moon()}
+function toggleTheme(){var h=document.documentElement,c=h.getAttribute("data-theme"),n=c==="dark"?"light":"dark";h.setAttribute("data-theme",n);localStorage.setItem("baibot-theme",n);syncTheme()}
+function ic_sun(){return'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>'}
+function ic_moon(){return'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>'}
+
+/* ── Toast ── */
+var toastTimer=0;
+function showToast(msg,isErr){var t=document.getElementById("toast");t.textContent=msg;t.className=isErr?"error":"";
+  t.classList.add("show");if(toastTimer)clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.classList.remove("show")},2500)}
+
+/* ── Tabs ── */
+document.querySelectorAll(".tab-btn").forEach(function(b){b.addEventListener("click",function(){
+  document.querySelectorAll(".tab-btn").forEach(function(x){x.classList.remove("active")});this.classList.add("active");
+  document.querySelectorAll(".tab-content").forEach(function(x){x.classList.remove("active")});
+  document.getElementById("tab-"+this.dataset.tab).classList.add("active");
+  if(this.dataset.tab==="model"){loadModelTab()}
+  if(this.dataset.tab==="info"){loadSessionInfo()}
+})});
+
+/* ── API helpers ── */
+function api(path,body){return fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})}).then(function(r){return r.json()})}
+
+/* ── Button spinner ── */
+function setLoading(btn,loading){if(loading){btn.classList.add("loading");btn.disabled=true}else{btn.classList.remove("loading");btn.disabled=false}}
+
+/* ── 模型下拉填充 ── */
+var allModels=[];
+function fillModelSelect(selId,selectedVal,cb){
+  var sel=document.getElementById(selId);if(!sel)return;
+  sel.innerHTML="";
+  for(var i=0;i<allModels.length;i++){
+    var opt=document.createElement("option");
+    opt.value=allModels[i].value;
+    opt.textContent=allModels[i].label;
+    if(allModels[i].value===selectedVal)opt.selected=true;
+    sel.appendChild(opt);
+  }
+  if(cb)cb();
+}
+
+/* ── 基本信息 ── */
+function loadInfo(){
+  api("/api/config",{}).then(function(d){
+    if(!d.ok)return;
+    document.getElementById("info-agent").value=d.config.agent_name||"";
+    document.getElementById("info-steps").value=d.config.max_steps;
+    document.getElementById("info-temp").value=d.config.temperature;
+    var curModel=d.config.provider+"/"+d.config.model;
+    fillModelSelect("info-model-select",curModel);
+  });
+  loadSessionInfo();
+}
+function loadSessionInfo(){
+  api("/api/command",{command:"/session"}).then(function(d){
+    if(d.ok){
+      var parts=d.message.split("\n");
+      document.getElementById("info-session").textContent=parts[0]?parts[0].replace("会话 ID: ",""):"-";
+    }
+  });
+}
+function saveInfoConfig(){
+  var btn=document.getElementById("btn-save-info");
+  setLoading(btn,true);
+  var modelVal=document.getElementById("info-model-select").value;
+  var body={model:modelVal};
+  var aname=document.getElementById("info-agent").value.trim();if(aname)body.agent_name=aname;
+  var steps=parseInt(document.getElementById("info-steps").value);if(!isNaN(steps)&&steps>0)body.max_steps=steps;
+  var temp=parseFloat(document.getElementById("info-temp").value);if(!isNaN(temp)&&temp>=0)body.temperature=temp;
+  api("/api/set-config",body).then(function(d){
+    setLoading(btn,false);
+    if(d.ok){showToast("配置已保存")}else{showToast(d.error||"保存失败",true)}
+  });
+}
+
+/* ── 大模型设置 ── */
+function loadModelTab(){
+  api("/api/models").then(function(d){
+    if(!d.ok)return;
+    allModels=d.models;
+    fillDefaultModel();
+  });
+}
+function fillDefaultModel(){
+  api("/api/providers",{}).then(function(d){
+    if(!d.ok)return;
+    var defVal=d.default_provider+"/"+d.default_model;
+    fillModelSelect("default-model-select",defVal);
+    document.getElementById("default-model-status").textContent="当前默认: "+defVal;
+  });
+}
+function saveDefaultModel(){
+  var val=document.getElementById("default-model-select").value;if(!val)return;
+  var btn=document.getElementById("btn-save-default-model");setLoading(btn,true);
+  api("/api/set-default-model",{model:val}).then(function(d){
+    setLoading(btn,false);
+    if(d.ok){showToast("默认模型已设为 "+d.default_provider+"/"+d.default_model);document.getElementById("default-model-status").textContent="当前默认: "+d.default_provider+"/"+d.default_model}
+    else{showToast(d.error||"设置失败",true)}
+  });
+}
+
+/* ── Provider JSON ── */
+function loadProviderConfig(){
+  api("/api/providers",{}).then(function(d){
+    if(!d.ok)return;
+    var cfg={default_provider:d.default_provider,default_model:d.default_model,providers:d.providers};
+    document.getElementById("provider-json").value=JSON.stringify(cfg,null,2);
+    document.getElementById("provider-status").textContent="";
+  });
+}
+function saveProviderConfig(){
+  var raw=document.getElementById("provider-json").value;
+  try{var parsed=JSON.parse(raw)}catch(e){showToast("JSON 格式错误: "+e.message,true);return}
+  var btn=document.getElementById("btn-save-providers");setLoading(btn,true);
+  api("/api/providers",{
+    default_provider:parsed.default_provider||"",
+    default_model:parsed.default_model||"",
+    providers:parsed.providers||[]
+  }).then(function(d){
+    setLoading(btn,false);
+    if(d.ok){showToast("配置已保存并生效");fillDefaultModel();loadInfo();loadModelTab();
+      document.getElementById("provider-status").textContent="已保存 · "+new Date().toLocaleTimeString()}
+    else{showToast(d.error||"保存失败",true)}
+  });
+}
+
+/* ── 工具列表 ── */
+var pluginConfigs={},currentPlugin=null;
+
+function loadTools(){
+  api("/api/tools").then(function(d1){
+    if(!d1.ok)return;
+    var tools=d1.tools;
+    api("/api/plugin-config",{}).then(function(d2){
+      if(d2.ok)pluginConfigs=d2.plugins;
+      var html="";
+      for(var i=0;i<tools.length;i++){
+        var t=tools[i],hasCfg=!!(pluginConfigs[t.name]&&Object.keys(pluginConfigs[t.name].fields).length>0);
+        html+='<div class="plugin-card">'+
+        '<div class="pc-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></div>'+
+        '<div class="pc-info"><div class="pc-name">'+esc(t.name)+'</div><div class="pc-desc">'+esc(t.type)+'</div></div>'+
+        (hasCfg?'<button class="pc-settings" data-plugin="'+esc(t.name)+'">设置</button>':'')+
+        '</div>';
+      }
+      document.getElementById("plugins-scroll").innerHTML=html;
+      var btns=document.querySelectorAll(".pc-settings");
+      for(var j=0;j<btns.length;j++)btns[j].addEventListener("click",function(){
+        openPluginSettings(this.dataset.plugin);
+      });
+    });
+  });
+}
+
+/* ── Plugin Modal ── */
+function openPluginSettings(name){
+  currentPlugin=name;
+  var cfg=pluginConfigs[name];if(!cfg)return;
+  document.getElementById("modal-title").textContent="设置 · "+name;
+  var html="";
+  for(var key in cfg.fields){
+    var f=cfg.fields[key];
+    html+='<div class="modal-field">'+
+      '<label class="mf-label">'+esc(f.label)+'</label>'+
+      '<input class="mf-input" type="text" id="mf-'+key+'" value="'+escAttr(f.value)+'" placeholder="'+escAttr(f.description)+'">'+
+      '<div class="mf-desc">'+esc(f.description)+'</div></div>';
+  }
+  document.getElementById("modal-fields").innerHTML=html;
+  document.getElementById("modal-box").classList.add("open");
+  document.getElementById("modal-overlay").classList.add("open");
+}
+function closeModal(){
+  document.getElementById("modal-box").classList.remove("open");
+  document.getElementById("modal-overlay").classList.remove("open");
+  currentPlugin=null;
+}
+function savePluginConfig(){
+  if(!currentPlugin)return;
+  var fields={};
+  for(var key in pluginConfigs[currentPlugin].fields){
+    var el=document.getElementById("mf-"+key);if(!el)continue;
+    fields[key]=el.value;
+  }
+  var btn=document.getElementById("modal-save");setLoading(btn,true);
+  api("/api/plugin-config",{plugin:currentPlugin,fields:fields}).then(function(d){
+    setLoading(btn,false);
+    if(d.ok){showToast("配置已保存");closeModal();loadTools()}else{showToast(d.error||"保存失败",true)}
+  });
+}
+
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+function escAttr(s){return String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;")}
+
+/* ── 清空会话 ── */
+function clearAllConversations(){
+  if(!confirm("确定要清空所有会话记录吗？此操作不可撤销。"))return;
+  localStorage.removeItem("baibot-conversations");
+  localStorage.removeItem("baibot-active-conv");
+  showToast("已清空所有会话");
+}
+
+/* ── Init ── */
+document.getElementById("theme-btn").addEventListener("click",toggleTheme);
+api("/api/models").then(function(d){
+  if(d.ok)allModels=d.models;
+}).then(function(){
+  loadInfo();
+  loadProviderConfig();
+  fillDefaultModel();
+});
+loadTools();
+</script>
+</body>
+</html>
