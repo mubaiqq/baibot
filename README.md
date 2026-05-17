@@ -64,37 +64,41 @@
 ### 🪟 Windows 一键部署（推荐）
 
 ```batch
-# 克隆项目
 git clone https://github.com/mubaiqq/baibot.git
 cd agent
 
-# 双击 deploy.bat 或命令行运行
-deploy.bat
+# 双击 deploy.exe
+deploy.exe
 ```
 
-启动后显示**交互式控制面板**，自动检测 Python、创建 venv、安装依赖。
+**首次运行**会自动弹出设置向导：检测 Python → 创建虚拟环境 → 安装依赖 → 进度条完成。
 
-| 命令 | 说明 |
+**后续运行**直接进入 GUI 控制面板，点击即可启动/停止 WebUI、查看日志、卸载。
+
+| 操作 | 说明 |
 |------|------|
-| `deploy.bat` | 打开交互控制面板（`python deploy.py`） |
-| `deploy.bat cli` | 直接进入命令行聊天 |
-| `deploy.bat start` | 后台启动 WebUI |
-| `deploy.bat stop` | 停止 WebUI |
-| `deploy.bat restart` | 重启 WebUI |
-| `deploy.bat status` | 查看运行状态 |
-| `deploy.bat log` | 查看日志 |
-| `deploy.bat update` | 更新 Python 依赖 |
-| `deploy.bat uninstall` | 卸载（删除 venv / 配置 / 缓存） |
+| 双击 `deploy.exe` | GUI 控制面板（首次自动安装） |
+| `Start WebUI` | 后台启动 WebUI |
+| `Stop WebUI` | 停止 WebUI |
+| `View Log` | 用记事本打开日志 |
+| `Uninstall` | 删除 venv / 日志 / 配置，保留源码 |
 
-> **打包为 .exe**：如需不依赖 Python 的独立可执行文件，运行 `pip install pyinstaller && pyinstaller --onefile --console --name deploy deploy.py`，生成的 `dist/deploy.exe`（约 8MB）可独立运行。
+> `deploy.exe` 仅 82KB，纯 C 编写，无任何运行时依赖。
+>
+> 从源码编译：`gcc -mwindows -O2 deploy.c -o deploy.exe -lcomctl32 -lcomdlg32 -lshlwapi`
 
 ### 🐧 Linux 一键部署（推荐）
-
 ```bash
+# 1. 重新从 GitHub 克隆项目
 git clone https://github.com/mubaiqq/baibot.git
-cd agent
 
-bash deploy.sh
+# 2. 进入项目目录
+cd baibot
+
+# 3. 赋予部署脚本权限并执行全新部署
+chmod +x deploy.sh
+bash deploy.sh start
+ 
 ```
 
 | 命令 | 说明 |
@@ -264,7 +268,9 @@ agent/
 ├── app_config.json      # Agent 参数持久化
 ├── requirements.txt     # Python 依赖
 ├── deploy.sh            # Linux 一键部署脚本
-├── deploy.bat           # Windows 一键部署脚本
+├── deploy.bat           # Windows 控制面板（调用 deploy.exe）
+├── deploy.c             # Windows GUI 控制面板源码（C / Win32）
+├── deploy.exe           # Windows GUI 控制面板（82KB，预编译）
 ├── scripts/             # AI 自动生成的 Python 脚本
 └── tools/
     ├── __init__.py       # 工具注册 + Schema + 配置收集
