@@ -157,8 +157,5 @@ def build_system_prompt(memory_context: str = "") -> str:
 - 全选/保存/复制/粘贴: `gui_action(hotkey)`；回车: `gui_action(press)`。
 - 输入文字: `gui_action(type)`；替换内容: 先全选再输入。
 - 操作窗口前先确认目标窗口已激活。
-
-## 路由说明
-部分简单桌面任务会被规则路由器直接执行，你不会看到 tool_calls。未被路由的任务仍需你按以上规则选择工具。
 """
     return prompt
