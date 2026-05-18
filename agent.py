@@ -11,7 +11,7 @@ import sys
 from types import SimpleNamespace
 from typing import Dict, List
 
-from config import CONFIG, client, build_system_prompt
+import config as _cfg
 from tools import TOOLS, TOOLS_MAP
 
 from memory import (
@@ -108,7 +108,7 @@ class Agent:
         session_summary = get_session_summary()
 
         # System Prompt
-        system_prompt = build_system_prompt(
+        system_prompt = _cfg.build_system_prompt(
             memory_text + "\n\n" + session_summary
         )
 
@@ -151,19 +151,32 @@ class Agent:
                 TOOLS if attempt < self.API_MAX_RETRIES - 1 else []
             )
             try:
-                response = client.chat.completions.create(
-                    model=CONFIG["model"],
+                response = _cfg.client.chat.completions.create(
+                    model=_cfg.CONFIG["model"],
                     messages=messages,
                     tools=use_tools,
                     tool_choice="auto" if use_tools else None,
                     max_tokens=4096,
-                    temperature=CONFIG["temperature"],
+                    temperature=_cfg.CONFIG["temperature"],
                 )
             except Exception as e:
                 if attempt < self.API_MAX_RETRIES - 1:
                     self._emit("process", f"⟳ API 异常，重试 {attempt + 1}/{self.API_MAX_RETRIES - 1}...")
                     continue
+                pn = _cfg.CONFIG.get("provider", "?")
+                mn = _cfg.CONFIG.get("model", "?")
+                try:
+                    bu = str(_cfg.client.base_url) if hasattr(_cfg.client, 'base_url') else "?"
+                except Exception:
+                    bu = "?"
+                try:
+                    key = str(_cfg.client.api_key) if hasattr(_cfg.client, 'api_key') else "?"
+                    if len(key) > 12:
+                        key = key[:6] + "..." + key[-4:]
+                except Exception:
+                    key = "?"
                 self._emit("process", f"✗ API 异常: {e}")
+                self._emit("process", f"   提供商={pn}  模型={mn}  base_url={bu}  key={key}")
                 return None
 
             if response.choices and response.choices[0].message:
@@ -217,9 +230,9 @@ class Agent:
         """Multi-step LLM loop: AI can call tools repeatedly, up to max_steps times."""
         total_tool_calls = 0
 
-        for step in range(CONFIG["max_steps"]):
+        for step in range(_cfg.CONFIG["max_steps"]):
 
-            if total_tool_calls >= CONFIG["max_steps"]:
+            if total_tool_calls >= _cfg.CONFIG["max_steps"]:
                 self._emit("process", "⏹ 工具调用已达上限，生成最终回复")
                 return self._finalize()
 
@@ -262,7 +275,7 @@ class Agent:
 
                 total_tool_calls += 1
 
-                if total_tool_calls > CONFIG["max_steps"]:
+                if total_tool_calls > _cfg.CONFIG["max_steps"]:
                     self._emit("process", "⏹ 工具调用已达上限，生成最终回复")
                     return self._finalize()
 
@@ -664,12 +677,12 @@ class Agent:
 
         for attempt in range(3):
             try:
-                resp = client.chat.completions.create(
-                    model=CONFIG["model"],
+                resp = _cfg.client.chat.completions.create(
+                    model=_cfg.CONFIG["model"],
                     messages=base_messages + [
                         {"role": "user", "content": "根据以上信息直接回答用户，不要再调用任何工具。用 1-3 句话精简总结，严禁复制原始表格或命令输出。"}
                     ],
-                    temperature=CONFIG["temperature"],
+                    temperature=_cfg.CONFIG["temperature"],
                 )
                 if resp.choices and resp.choices[0].message and resp.choices[0].message.content:
                     content = resp.choices[0].message.content
