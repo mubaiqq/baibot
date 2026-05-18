@@ -51,9 +51,12 @@ client = get_client(CONFIG["provider"])
 
 def apply_model(provider_name: str, model: str):
     global client
+    old_provider = CONFIG.get("provider", "?")
+    old_model = CONFIG.get("model", "?")
     CONFIG["provider"] = provider_name
     CONFIG["model"] = model
     client = get_client(provider_name)
+    print(f"[baibot] apply_model: {old_provider}/{old_model} → {provider_name}/{model}  base_url={client.base_url}")
 
 
 def build_system_prompt(memory_context: str = "") -> str:

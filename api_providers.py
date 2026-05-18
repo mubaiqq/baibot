@@ -67,6 +67,21 @@ DEFAULT_PROVIDER = "算力岛"
 DEFAULT_MODEL = "claude-sonnet-4-6"
 
 
+_HARDCODED_PROVIDERS_BACKUP = [
+    {
+        "name": "算力岛",
+        "base_url": "https://api.mytokenland.com/v1",
+        "api_key": "sk-your-key-here",
+        "models": ["claude-sonnet-4-6"],
+    },
+    {
+        "name": "DeepSeek",
+        "base_url": "https://api.deepseek.com",
+        "api_key": "sk-your-key-here",
+        "models": ["deepseek-v4-pro"],
+    },
+]
+
 def get_client(provider_name: str | None = None) -> OpenAI:
     p = None
     target = provider_name or DEFAULT_PROVIDER
@@ -75,14 +90,26 @@ def get_client(provider_name: str | None = None) -> OpenAI:
             p = provider
             break
     if not p:
-        p = PROVIDERS[0]
-        print(f"[baibot] 警告: 提供商 '{target}' 不存在，已回退到 '{p['name']}'")
+        if provider_name is not None:
+            print(f"[baibot] ⚠️ 严重警告: 提供商 '{target}' 在当前 PROVIDERS 列表中不存在！")
+            print(f"[baibot]    当前 PROVIDERS 列表: {[pr['name'] for pr in PROVIDERS]}")
+            print(f"[baibot]    → 将使用硬编码备用值，避免路由到错误端点")
+            for bp in _HARDCODED_PROVIDERS_BACKUP:
+                if bp["name"] == target:
+                    p = dict(bp)
+                    break
+        if not p:
+            p = PROVIDERS[0] if PROVIDERS else _HARDCODED_PROVIDERS_BACKUP[0]
+            print(f"[baibot] 警告: 提供商 '{target}' 不存在，已回退到 '{p['name']}'")
 
     key = p.get("api_key", "")
     if key in ("sk-your-key-here", "tp-your-key-here", "your-key-here", ""):
         print(f"[baibot] 警告: 提供商 '{p['name']}' 的 API Key 为占位符，请前往设置页面配置真实密钥")
 
-    return OpenAI(api_key=key, base_url=p["base_url"])
+    bu = p.get("base_url", "")
+    print(f"[baibot] get_client(provider={provider_name!r}) → 选中提供商 '{p['name']}'  base_url={bu}  key={key[:6] + '...' if len(key) > 8 else key}")
+
+    return OpenAI(api_key=key, base_url=bu)
 
 
 def get_provider(provider_name: str) -> dict | None:

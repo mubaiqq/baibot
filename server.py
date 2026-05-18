@@ -334,6 +334,7 @@ def api_set_config():
         CONFIG["temperature"] = float(data["temperature"])
     if "agent_name" in data or "max_steps" in data or "temperature" in data:
         save_app_config()
+    model_error = None
     if "model" in data:
         val = data["model"].strip()
         if val:
@@ -343,13 +344,50 @@ def api_set_config():
                 apply_model(pname, model)
                 agent = get_agent()
                 agent.reload_prompt()
-    return {"ok": True, "message": "配置已更新"}
+            else:
+                model_error = f"未找到模型 '{val}'"
+    import config as _c
+    bu = str(_c.client.base_url) if hasattr(_c.client, 'base_url') else "?"
+    resp = {"ok": True, "message": "配置已更新",
+            "applied_provider": CONFIG.get("provider"),
+            "applied_model": CONFIG.get("model"),
+            "applied_base_url": bu}
+    if model_error:
+        resp["ok"] = False
+        resp["error"] = model_error
+    return resp
+
+
+@app.route("/api/debug-client", methods=["GET"])
+def api_debug_client():
+    import config as _c
+    import api_providers as ap
+    bu = "?"
+    key_masked = "?"
+    try:
+        bu = str(_c.client.base_url)
+    except Exception:
+        pass
+    try:
+        k = str(_c.client.api_key)
+        key_masked = k[:6] + "..." + k[-4:] if len(k) > 10 else k[:3] + "..."
+    except Exception:
+        pass
+    return {"ok": True,
+            "config_provider": _c.CONFIG.get("provider"),
+            "config_model": _c.CONFIG.get("model"),
+            "client_base_url": bu,
+            "client_api_key_masked": key_masked,
+            "default_provider": ap.DEFAULT_PROVIDER,
+            "default_model": ap.DEFAULT_MODEL,
+            "providers_list": [p["name"] for p in ap.PROVIDERS]}
 
 
 @app.route("/api/set-default-model", methods=["POST"])
 def api_set_default_model():
-    from api_providers import find_model, DEFAULT_PROVIDER, DEFAULT_MODEL
+    from api_providers import find_model
     import api_providers as ap
+    from config import apply_model
     data = request.get_json() or {}
     val = data.get("model", "").strip()
     if not val:
@@ -361,7 +399,13 @@ def api_set_default_model():
     ap.DEFAULT_PROVIDER = pname
     ap.DEFAULT_MODEL = model
     ap.save_config()
-    return {"ok": True, "message": f"默认模型已设为 {pname}/{model}", "default_provider": pname, "default_model": model}
+    apply_model(pname, model)
+    agent = get_agent()
+    agent.reload_prompt()
+    from config import CONFIG
+    return {"ok": True, "message": f"默认模型已设为 {pname}/{model}",
+            "default_provider": pname, "default_model": model,
+            "applied_provider": CONFIG.get("provider"), "applied_model": CONFIG.get("model")}
 
 
 @app.route("/api/plugin-config", methods=["GET", "POST"])
@@ -397,6 +441,59 @@ def api_plugin_config():
     TOOL_APPLY_CONFIG[plugin_name](fields)
     _save_plugin_config()
     return {"ok": True, "message": "配置已保存"}
+
+
+@app.route("/api/fetch-models", methods=["POST"])
+def api_fetch_models():
+    """从 OpenAI 兼容地址获取模型列表"""
+    data = request.get_json() or {}
+    base_url = (data.get("base_url") or "").strip()
+    api_key = (data.get("api_key") or "").strip()
+    if not base_url:
+        return {"ok": False, "error": "请输入提供商地址"}
+    if not api_key:
+        return {"ok": False, "error": "请输入密钥"}
+    try:
+        from openai import OpenAI
+        c = OpenAI(api_key=api_key, base_url=base_url)
+        resp = c.models.list()
+        models = [m.id for m in resp]
+        models.sort()
+        return {"ok": True, "models": models}
+    except Exception as e:
+        return {"ok": False, "error": f"获取模型列表失败: {e}"}
+
+
+@app.route("/api/add-provider", methods=["POST"])
+def api_add_provider():
+    """添加一个新的 API 提供商"""
+    import api_providers as ap
+    from config import CONFIG, apply_model
+    data = request.get_json() or {}
+    name = (data.get("name") or "").strip()
+    base_url = (data.get("base_url") or "").strip()
+    api_key = (data.get("api_key") or "").strip()
+    models = data.get("models") or []
+    if not name:
+        return {"ok": False, "error": "请输入提供商名称"}
+    if not base_url:
+        return {"ok": False, "error": "请输入提供商地址"}
+    if not api_key:
+        return {"ok": False, "error": "请输入密钥"}
+    if not isinstance(models, list) or len(models) == 0:
+        return {"ok": False, "error": "请至少添加一个模型（可点击'一键获取模型'）"}
+    for p in ap.PROVIDERS:
+        if p["name"] == name:
+            return {"ok": False, "error": f"提供商 '{name}' 已存在，请使用其他名称"}
+    new_provider = {
+        "name": name,
+        "base_url": base_url,
+        "api_key": api_key,
+        "models": models,
+    }
+    ap.PROVIDERS.append(new_provider)
+    ap.save_config()
+    return {"ok": True, "message": f"已添加提供商 '{name}'（{len(models)} 个模型）"}
 
 
 if __name__ == "__main__":
