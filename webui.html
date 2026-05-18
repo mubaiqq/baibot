@@ -296,12 +296,12 @@ body::before{content:'';position:fixed;inset:0;opacity:.016;pointer-events:none;
 }
 
 /* ── Toast ── */
-#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:999;
+#toast{position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:999;
   background:var(--accent);color:var(--bg);padding:10px 20px;border-radius:100px;
   font-size:13px;font-weight:500;font-family:var(--font);
   opacity:0;pointer-events:none;transition:opacity .25s ease,transform .25s var(--ease);
   box-shadow:var(--sh-md);white-space:nowrap}
-#toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(4px)}
 </style>
 </head>
 <body>

@@ -31,11 +31,14 @@ def _load_plugin_config():
 
 
 def _save_plugin_config():
-    from tools import TOOL_CONFIG_SCHEMAS
+    from tools import TOOL_CONFIG_SCHEMAS, TOOLS_MAP
     import importlib
     data = {}
     for name, schema in TOOL_CONFIG_SCHEMAS.items():
-        mod = importlib.import_module("tools." + name)
+        fn = TOOLS_MAP.get(name)
+        if not fn:
+            continue
+        mod = importlib.import_module(fn.__module__)
         entry = {}
         for key in schema:
             entry[key] = getattr(mod, key, "")
@@ -410,15 +413,25 @@ def api_set_default_model():
 
 @app.route("/api/plugin-config", methods=["GET", "POST"])
 def api_plugin_config():
-    from tools import TOOL_CONFIG_SCHEMAS, TOOL_APPLY_CONFIG
+    from tools import TOOL_CONFIG_SCHEMAS, TOOL_APPLY_CONFIG, TOOLS_MAP
     import importlib
 
     data = request.get_json(silent=True) or {}
     if request.method == "GET" or not data.get("plugin"):
         result = {}
+        seen_modules = {}
+        tool_to_plugin = {}
         for name, schema in TOOL_CONFIG_SCHEMAS.items():
+            fn = TOOLS_MAP.get(name)
+            if not fn:
+                continue
+            mod_name = fn.__module__
+            mod_key = mod_name.rsplit(".", 1)[-1]
+            tool_to_plugin[name] = mod_key
+            if mod_key in seen_modules:
+                continue
             try:
-                mod = importlib.import_module("tools." + name)
+                mod = importlib.import_module(mod_name)
             except Exception:
                 continue
             fields = {}
@@ -429,16 +442,24 @@ def api_plugin_config():
                     "description": field.get("description", ""),
                     "value": getattr(mod, key, ""),
                 }
-            result[name] = {"name": name, "fields": fields}
-        return {"ok": True, "plugins": result}
+            result[mod_key] = {"name": mod_key, "fields": fields}
+            seen_modules[mod_key] = True
+        return {"ok": True, "plugins": result, "tool_plugin": tool_to_plugin}
 
     plugin_name = data.get("plugin", "").strip()
     fields = data.get("fields") or {}
     if not plugin_name:
         return {"ok": False, "error": "缺少 plugin 参数"}
-    if plugin_name not in TOOL_APPLY_CONFIG:
+    apply_fn = TOOL_APPLY_CONFIG.get(plugin_name)
+    if not apply_fn:
+        for name, fn in TOOLS_MAP.items():
+            mod_key = fn.__module__.rsplit(".", 1)[-1]
+            if mod_key == plugin_name and name in TOOL_APPLY_CONFIG:
+                apply_fn = TOOL_APPLY_CONFIG[name]
+                break
+    if not apply_fn:
         return {"ok": False, "error": f"插件 '{plugin_name}' 不支持配置"}
-    TOOL_APPLY_CONFIG[plugin_name](fields)
+    apply_fn(fields)
     _save_plugin_config()
     return {"ok": True, "message": "配置已保存"}
 

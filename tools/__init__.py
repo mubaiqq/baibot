@@ -4,6 +4,7 @@ from .fetch_url import fetch_url
 from .time_tool import get_current_time
 from .system_info import get_system_info
 from .weather import get_weather_by_ip, get_weather_forecast, get_local_weather_forecast
+from .qweather import get_qweather_now, get_qweather_forecast
 from .shell_exec import shell_exec
 from .gui_action import gui_action
 from .open_file import open_file
@@ -18,6 +19,8 @@ TOOLS_MAP = {
     "get_weather_by_ip": get_weather_by_ip,
     "get_weather_forecast": get_weather_forecast,
     "get_local_weather_forecast": get_local_weather_forecast,
+    "get_qweather_now": get_qweather_now,
+    "get_qweather_forecast": get_qweather_forecast,
     "shell_exec": shell_exec,
     "gui_action": gui_action,
     "open_file": open_file,
@@ -139,6 +142,37 @@ TOOLS = [
                 "type": "object",
                 "properties": {
                     "day": {"type": "string", "enum": ["today", "tomorrow", "after_tomorrow"], "description": "查询日期"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_qweather_now",
+            "description": "【优先】和风天气实时天气。查询指定城市的实时天气，包括温度、体感温度、风力风向、湿度、气压、降水量、能见度等。支持中文城市名，数据5-20分钟更新一次。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "city": {"type": "string", "description": "城市名，如 北京、杭州、深圳。留空则自动IP定位"},
+                    "location": {"type": "string", "description": "LocationID 或 经度,纬度，优先于 city"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_qweather_forecast",
+            "description": "【优先】和风天气每日预报。查询指定城市未来3/7/10/15/30天天气预报，包括最高最低温度、白天夜间天气、风力风向、湿度、降水量、紫外线、日出日落等。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "city": {"type": "string", "description": "城市名，如 北京、杭州"},
+                    "location": {"type": "string", "description": "LocationID 或 经度,纬度，优先于 city"},
+                    "days": {"type": "string", "enum": ["3", "7", "10", "15", "30"], "description": "预报天数，默认3天"}
                 },
                 "required": []
             }

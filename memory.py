@@ -486,3 +486,19 @@ def save_session_summary(summary):
         data["sessions"][sid]["summary"] = summary
 
     _save(data)
+
+
+# =========================================================
+# SKILL MEMORY (自我进化)
+# =========================================================
+
+def add_skill_memory(content: str):
+    """存储 AI 自我总结的经验（skill 类型，importance 高）"""
+    content = content.strip()
+    if len(content) < 5:
+        return
+    merge_or_create_memory({
+        "type": "skill",
+        "content": content,
+        "importance": 0.85
+    })

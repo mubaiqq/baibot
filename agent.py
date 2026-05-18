@@ -24,6 +24,7 @@ from memory import (
     summarize_messages,
     get_session_summary,
     save_session_summary,
+    add_skill_memory,
 )
 
 
@@ -97,19 +98,28 @@ class Agent:
         )
 
         memory_text = ""
+        skill_text = ""
 
         if retrieved:
-            memory_text = "\n".join([
-                f"- {m['content']}"
-                for m in retrieved
-            ])
+            regular = [m for m in retrieved if m.get("type") != "skill"]
+            skills = [m for m in retrieved if m.get("type") == "skill"]
+            if regular:
+                memory_text = "\n".join([
+                    f"- {m['content']}"
+                    for m in regular
+                ])
+            if skills:
+                skill_text = "\n".join([
+                    f"- {m['content']}"
+                    for m in skills
+                ])
 
         # Session Summary
         session_summary = get_session_summary()
 
         # System Prompt
         system_prompt = _cfg.build_system_prompt(
-            memory_text + "\n\n" + session_summary
+            memory_text, skill_text, session_summary
         )
 
         messages = [
@@ -265,8 +275,12 @@ class Agent:
                     messages.append(assistant_message)
                     self.recent_messages.append(assistant_message)
 
-                self._emit("result", final_reply)
-                return final_reply
+                clean_reply = self._extract_experience(final_reply)
+                assistant_message["content"] = clean_reply
+                self.recent_messages[-1]["content"] = clean_reply
+
+                self._emit("result", clean_reply)
+                return clean_reply
 
             messages.append(assistant_message)
             self.recent_messages.append(assistant_message)
@@ -426,6 +440,24 @@ class Agent:
         self._print_token_summary()
 
     # =====================================================
+    # SELF-EVOLUTION: 经验提取
+    # =====================================================
+
+    def _extract_experience(self, text: str) -> str:
+        import re
+        pattern = re.compile(r"<EXP>(.*?)</EXP>", re.DOTALL)
+        matches = pattern.findall(text)
+        for exp in matches:
+            exp = exp.strip()
+            if exp and len(exp) >= 5:
+                try:
+                    add_skill_memory(exp)
+                except Exception as e:
+                    self._emit("process", f"⛝ 经验存储失败: {e}")
+        clean = pattern.sub("", text).strip()
+        return clean
+
+    # =====================================================
     # TOOL RESULT COMPRESSION
     # =====================================================
 
@@ -514,7 +546,7 @@ class Agent:
                 ensure_ascii=False
             )
 
-        if tool_name in {"get_weather_forecast", "get_local_weather_forecast"}:
+        if tool_name in {"get_weather_forecast", "get_local_weather_forecast", "get_qweather_forecast", "get_qweather_now"}:
             return json.dumps(result, ensure_ascii=False)
 
         raw = json.dumps(result, ensure_ascii=False)
@@ -543,6 +575,8 @@ class Agent:
             "get_weather_by_ip",
             "get_weather_forecast",
             "get_local_weather_forecast",
+            "get_qweather_now",
+            "get_qweather_forecast",
             "fetch_url",
             "write_file",
             "calculator",
@@ -686,6 +720,7 @@ class Agent:
                 )
                 if resp.choices and resp.choices[0].message and resp.choices[0].message.content:
                     content = resp.choices[0].message.content
+                    content = self._extract_experience(content)
                     if resp.usage:
                         self.total_prompt_tokens += resp.usage.prompt_tokens
                         self.total_completion_tokens += resp.usage.completion_tokens
@@ -797,7 +832,7 @@ class Agent:
                 f"{result.get('summary', '已保存文件')}"
             )
 
-        return "完成"
+        return result.get("summary", "完成")
 
     # =====================================================
     # TOKEN
