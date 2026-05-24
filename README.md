@@ -2,7 +2,7 @@
   <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTExIiBzdHJva2Utd2lkdGg9IjEuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSIxMCIvPjxwYXRoIGQ9Ik04IDE0czEuNSAyIDQgMiA0LTIgNC0yIi8+PGxpbmUgeDE9IjkiIHkxPSI5IiB4Mj0iOS4wMSIgeTI9IjkiLz48bGluZSB4MT0iMTUiIHkxPSI5IiB4Mj0iMTUuMDEiIHkyPSI5Ii8+PC9zdmc+" alt="logo" width="72" />
 </p>
 
-<h1 align="center">🤖 baibot · 小白</h1>
+<h1 align="center">🤖 baibot · 小白@作者mbykeji@qq.com</h1>
 <p align="center"><strong>基于大语言模型的自主 AI 助手</strong></p>
 <p align="center">支持工具调用 · 实时联网搜索 · 系统信息 · 天气预报 · Shell 命令 · 桌面 GUI · 文件操作</p>
 <p align="center">
